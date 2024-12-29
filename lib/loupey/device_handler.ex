@@ -40,6 +40,14 @@ defmodule Loupey.DeviceHandler do
     GenServer.call(pid, {:set_brightness, value})
   end
 
+  @doc """
+  Set the color of a button.
+
+  Parameters:
+    * `id` - The button id.
+    * `color` - The color as a string in the format "#RRGGBB".
+  """
+  @spec set_button_color(pid(), Loupey.Device.button_number(), String.t()) :: any()
   def set_button_color(pid, id, color) do
     GenServer.call(pid, {:set_button_color, id, color})
   end
@@ -48,14 +56,21 @@ defmodule Loupey.DeviceHandler do
     GenServer.call(pid, {:draw_buffer, id, width, height, x, y, buffer})
   end
 
+  @spec draw_image(pid(), Loupey.Device.button_number(), Loupey.Image.t()) :: any()
+  def draw_image(pid, button_id, image) do
+    GenServer.call(pid, {:draw_image, button_id, image})
+  end
+
   def fill_key(pid, id, color) do
     GenServer.call(pid, {:fill_key, id, color})
   end
 
+  @spec fill_slider(pid(), :left | :right, String.t()) :: any()
   def fill_slider(pid, id, color, percent \\ 100) do
     GenServer.call(pid, {:fill_slider, id, color, percent})
   end
 
+  @spec refresh(pid(), :left | :center | :right) :: any()
   def refresh(pid, id) do
     GenServer.call(pid, {:refresh, id})
   end
@@ -66,9 +81,12 @@ defmodule Loupey.DeviceHandler do
     {:ok, uarts_pid} = Circuits.UART.start_link()
     :ok = Circuits.UART.open(uarts_pid, device.tty, speed: 256_000, active: false)
     :ok = Circuits.UART.write(uarts_pid, @ws_upgrade_header)
-    {:ok, _ } = Circuits.UART.read(uarts_pid)
+    {:ok, _} = Circuits.UART.read(uarts_pid)
     {:ok, handler_pid} = handler.start_link(device)
-    :ok = Circuits.UART.configure(uarts_pid, framing: {Loupey.Framing.Websocket, []}, active: true)
+
+    :ok =
+      Circuits.UART.configure(uarts_pid, framing: {Loupey.Framing.Websocket, []}, active: true)
+
     Logger.info("UARTS configuration: #{inspect(Circuits.UART.configuration(uarts_pid))}")
 
     {:ok,
@@ -87,9 +105,9 @@ defmodule Loupey.DeviceHandler do
     end)
   end
 
-  def handle_call({:set_button_color, id, value}, from, state) do
+  def handle_call({:set_button_color, id, color_value}, from, state) do
     run_command(state, from, fn _ ->
-      Loupey.Device.set_button_color_command(id, value)
+      Loupey.Device.set_button_color_command(id, color_value)
     end)
   end
 
@@ -117,11 +135,16 @@ defmodule Loupey.DeviceHandler do
     end)
   end
 
+  def handle_call({:draw_image, button_id, image}, from, state) do
+    run_command(state, from, fn state ->
+      Loupey.Device.draw_image_command(state.device, button_id, image)
+    end)
+  end
+
   defp run_command(state, from, command) do
     {state, transaction_id} = next_transaction_id(state, from)
     {cmd, data} = command.(state)
     buffer = format_message(transaction_id, cmd, data)
-    Logger.info("Sending buffer: #{inspect(buffer)}")
     write_data(state.uarts_pid, buffer)
     {:noreply, state}
   end
@@ -131,7 +154,7 @@ defmodule Loupey.DeviceHandler do
   def handle_info({:circuits_uart, _tty, data}, state) when is_binary(data) do
     {device, message} = Loupey.Device.parse_message(state.device, data)
     state = put_in(state.device, device)
-    Logger.info("Parsed message: #{inspect(message)}")
+    Logger.debug("Parsed message: #{inspect(message)}")
 
     state =
       case message do

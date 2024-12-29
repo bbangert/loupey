@@ -1,5 +1,39 @@
 defmodule Loupey.Device do
-  defstruct [:tty, :variant, :variant_info, :touches]
+  @moduledoc """
+  Device data and command parsing and creation.
+
+  This module is responsible for identifying devices, parsing incoming messages, and
+  creating commands to send to the device based on device specific information.
+  """
+
+  use TypedStruct
+
+  typedstruct enforce: true do
+    @typedoc """
+    A struct representing a Loupedeck device tty, its variant, variant info, and touch state.
+    """
+    field(:tty, String.t())
+    field(:variant, module())
+    field(:variant_info, map())
+    field(:touches, touch_map())
+  end
+
+  @type knob() :: :knobCT | :knobTL | :knobCL | :knobBL | :knobTR | :knobCR | :knobBR
+  @type transaction_id() :: integer()
+  @type touch_id() :: integer()
+  @type x_coord() :: integer()
+  @type y_coord() :: integer()
+  @type button_number() :: integer()
+  @type location :: :left | {:center, button_number()} | :right
+  @type touch() :: {x_coord(), y_coord(), touch_id(), location()}
+  @type touch_map() :: %{touch_id() => touch()}
+
+  @type parsed_command() ::
+          {:unknown_command | :unknown_message, binary()}
+          | {:unknown_command, transaction_id(), binary()}
+          | {:button_press, integer(), :down | :up}
+          | {:knob_rotate, knob(), :left | :right}
+          | {:touch_start | :touch_move | :touch_end, touch_map(), touch()}
 
   @variants [
     Loupey.Device.Variant.Live
@@ -24,6 +58,37 @@ defmodule Loupey.Device do
     touch_end: 0x6D,
     touch_end_ct: 0x72
   }
+
+  @type push_buttons ::
+          :knobCT
+          | :knobTL
+          | :knobCL
+          | :knobBL
+          | :knobTR
+          | :knobCR
+          | :knobBR
+          | 0
+          | 1
+          | 2
+          | 3
+          | 4
+          | 5
+          | 6
+          | 7
+          | :home
+          | :undo
+          | :keyboard
+          | :enter
+          | :save
+          | :fnL
+          | :a
+          | :c
+          | :fnR
+          | :b
+          | :d
+          | :e
+
+  @type color_buttons() :: 0..7
 
   @buttons %{
     :knobCT => 0x00,
@@ -55,13 +120,21 @@ defmodule Loupey.Device do
     :e => 0x1A
   }
 
+  # General device desicovery and identification.
+
+  @doc """
+  Discover devices from a list of device tty's and device info such as
+  `Circuits.UART.enumerate/0` returns and return a list of `Loupey.Device` structs
+  that were found.
+  """
+  @spec discover_devices(map()) :: list(Loupey.Device.t())
   def discover_devices(device_list) do
     device_list
     |> Enum.map(&find_variant/1)
     |> Enum.reject(&is_nil/1)
   end
 
-  def find_variant({tty, device_info}) do
+  defp find_variant({tty, device_info}) do
     variant = Enum.find(@variants, & &1.is_variant?(device_info))
 
     case variant do
@@ -78,6 +151,13 @@ defmodule Loupey.Device do
     end
   end
 
+  # Command parsing.
+
+  @doc """
+  Parse a message from a Loupedeck device and return the device and the parsed message.
+  """
+  @spec parse_message(Loupey.Device.t(), nonempty_binary()) ::
+          {Loupey.Device.t(), parsed_command()}
   def parse_message(device, <<_, command, transaction_id, data::binary>>) do
     cmd = parse_command(command)
 
@@ -90,7 +170,7 @@ defmodule Loupey.Device do
     end
   end
 
-  def parse_message(_device, payload), do: {:unknown_message, payload}
+  def parse_message(device, payload), do: {device, {:unknown_message, payload}}
 
   defp parse_command(command) do
     case Enum.find(@commands, fn {_, value} -> value == command end) do
@@ -101,7 +181,7 @@ defmodule Loupey.Device do
 
   defp parse_knob_rotate(data) do
     case data do
-      <<id, delta>> -> {:knob_rotate, button_lookup(id), delta}
+      <<id, delta>> -> {:knob_rotate, button_lookup(id), if(delta == 1, do: :right, else: :left)}
       _ -> {:unknown_command, data}
     end
   end
@@ -114,6 +194,7 @@ defmodule Loupey.Device do
     end
   end
 
+  # Command creation.
   defp parse_touch(device, {command, data}) do
     case data do
       <<_, x::unsigned-big-integer-16, y::unsigned-big-integer-16, id>> ->
@@ -139,56 +220,70 @@ defmodule Loupey.Device do
     end
   end
 
-  def key_pixels(device, location) do
-    case location do
-      :left ->
-        display = device.variant_info.displays.left
-        display.width * display.height
+  @type command() :: {non_neg_integer(), nonempty_binary() | non_neg_integer()}
 
-      {:center, _} ->
-        device.variant_info.key_size * device.variant_info.key_size
-
-      :right ->
-        display = device.variant_info.displays.right
-        display.width * display.height
-
-      _ ->
-        0
-    end
+  @doc """
+  Create a command to fill a key with a color.
+  """
+  @spec fill_key_color_command(Loupey.Device.t(), {:center, button_number()}, String.t()) ::
+          command()
+  def fill_key_color_command(device, {:center, index}, color) do
+    pixel_count = device.variant_info.key_size * device.variant_info.key_size
+    buffer = Loupey.Color.fill_key_color(color, pixel_count)
+    key_size = device.variant_info.key_size
+    {x, y} = find_key_offset(device, index)
+    draw_buffer_command(device, {:center, key_size, key_size, x, y}, buffer)
   end
 
-  def button_lookup(id) do
-    case Enum.find(@buttons, fn {_, value} -> value == id end) do
-      {button, _} -> button
-      nil -> nil
-    end
-  end
-
-  def fill_key_color_command(device, {location, index} = id, color) do
-    pixel_count = key_pixels(device, id)
-    buffer = Loupey.Image.fill_key_color(color, pixel_count)
+  defp find_key_offset(device, button_id) do
     {x, _} = device.variant_info.visible_x
     key_size = device.variant_info.key_size
-    x = x + rem(index, device.variant_info.columns) * key_size
-    y = floor(index / device.variant_info.columns) * key_size
-    draw_buffer_command(device, {location,  key_size, key_size, x, y}, buffer)
+    x = x + rem(button_id, device.variant_info.columns) * key_size
+    y = floor(button_id / device.variant_info.columns) * key_size
+    {x, y}
   end
 
+  @doc """
+  Create a command to fill a slider with a color.
+  """
+  @spec fill_slider_color_command(
+          Loupey.Device.t(),
+          :left | :right,
+          String.t(),
+          non_neg_integer()
+        ) :: command()
   def fill_slider_color_command(device, location, color, percent) do
     display = Map.fetch!(device.variant_info.displays, location)
-    buffer = Loupey.Image.fill_slider_color(color, display.width, display.height, percent)
+    buffer = Loupey.Color.fill_slider_color(color, display.width, display.height, percent)
     draw_buffer_command(device, {location, display.width, display.height, 0, 0}, buffer)
   end
 
+  @doc """
+  Create a command to set the brightness of the device.
+  """
+  @spec set_brightness_command(number()) :: command()
   def set_brightness_command(value) do
     byte = max(0, min(@max_brightness, round(value * @max_brightness)))
     {@commands.set_brightness, byte}
   end
 
-  def set_button_color_command(id, {r, g, b}) do
+  @doc """
+  Create a command to set the color of a button.
+  """
+  @spec set_button_color_command(color_buttons(), String.t()) :: command()
+  def set_button_color_command(id, color_value) do
+    [r, g, b] = Loupey.Color.parse_color(color_value)
     {@commands.set_color, <<Map.fetch!(@buttons, id), r, g, b>>}
   end
 
+  @doc """
+  Create a command to draw a buffer to a display.
+  """
+  @spec draw_buffer_command(
+          Loupey.Device.t(),
+          {:left | :right | :center, integer(), integer(), integer(), integer()},
+          binary()
+        ) :: command()
   def draw_buffer_command(device, {id, width, height, x, y}, buffer) do
     display = Map.fetch!(device.variant_info.displays, id)
 
@@ -202,8 +297,42 @@ defmodule Loupey.Device do
     {@commands.framebuff, <<display.id::binary, header::binary, buffer::binary>>}
   end
 
+  @spec draw_image_command(Loupey.Device.t(), button_number(), Loupey.Image.t()) :: command()
+  def draw_image_command(device, button_id, image) do
+    {x, y} = find_key_offset(device, button_id)
+    # Center the image if it is smaller than the key size.
+    offset_x =
+      case image.width < 90 do
+        true -> round((device.variant_info.key_size - image.width) / 2)
+        false -> 0
+      end
+
+    offset_y =
+      case image.height < 90 do
+        true -> round((device.variant_info.key_size - image.height) / 2)
+        false -> 0
+      end
+
+    draw_buffer_command(
+      device,
+      {:center, image.width, image.height, x + offset_x, y + offset_y},
+      image.data
+    )
+  end
+
+  @doc """
+  Create a command to refresh a display.
+  """
+  @spec refresh_command(Loupey.Device.t(), :left | :center | :right) :: command()
   def refresh_command(device, id) do
     display = Map.fetch!(device.variant_info.displays, id)
     {@commands.draw, display.id}
+  end
+
+  defp button_lookup(id) do
+    case Enum.find(@buttons, fn {_, value} -> value == id end) do
+      {button, _} -> button
+      nil -> nil
+    end
   end
 end

@@ -31,8 +31,8 @@ defmodule Loupey.Device.Variant.Live do
     }
   end
 
-  def touch_target(x, _y, _id) when x < @display_left_width, do: {:left}
-  def touch_target(x, _y, _id) when x >= @display_left_width + @display_center_width, do: {:right}
+  def touch_target(x, _y, _id) when x < @display_left_width, do: :left
+  def touch_target(x, _y, _id) when x >= @display_left_width + @display_center_width, do: :right
 
   def touch_target(x, y, _id) do
     column = floor((x - @display_left_width) / @key_size)

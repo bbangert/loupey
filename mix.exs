@@ -22,7 +22,8 @@ defmodule Loupey.MixProject do
   defp deps do
     [
       {:circuits_uart, "~> 1.5"},
-      {:image, "~> 0.55.2"}
+      {:image, "~> 0.55.2"},
+      {:typed_struct, "~> 0.3.0"}
     ]
   end
 end
