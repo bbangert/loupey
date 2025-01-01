@@ -154,6 +154,12 @@ defmodule Loupey.DeviceHandler do
   def handle_info({:circuits_uart, _tty, data}, state) when is_binary(data) do
     {device, message} = Loupey.Device.parse_message(state.device, data)
     state = put_in(state.device, device)
+
+    case message do
+      {:touch_start, _touch_map, touch} -> Process.send_after(self(), {:touch_check, touch}, 400)
+      _ -> nil
+    end
+
     Logger.debug("Parsed message: #{inspect(message)}")
 
     state =
@@ -166,9 +172,17 @@ defmodule Loupey.DeviceHandler do
           state
 
         _ ->
-          state.handler.handle_message(message)
+          state.handler.handle_message(state.handler_pid, message)
           state
       end
+
+    {:noreply, state}
+  end
+
+  def handle_info({:touch_check, {_x, _y, touch_id, _} = touch}, state) do
+    if match?(%{^touch_id => ^touch}, state.device.touches) do
+      Logger.info("Touch HOLD: #{inspect(touch)}")
+    end
 
     {:noreply, state}
   end
