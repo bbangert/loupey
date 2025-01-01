@@ -6,6 +6,10 @@ defmodule Loupey.Image do
   use TypedStruct
 
   typedstruct enforce: true do
+    @typedoc """
+    A struct representing an image loaded from a file and its binary thumbnail
+    data formatted for the Loupedeck device.
+    """
     field(:img, Vix.Vips.Image.t())
     field(:width, integer())
     field(:height, integer())
@@ -19,10 +23,10 @@ defmodule Loupey.Image do
       path
       |> File.read!()
       |> Image.open!()
-      |> Image.thumbnail!(max)
 
     data =
       img
+      |> Image.thumbnail!(max)
       |> Image.flatten!()
       |> convert_to_binary()
 

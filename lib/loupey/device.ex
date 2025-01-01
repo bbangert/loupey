@@ -1,6 +1,6 @@
 defmodule Loupey.Device do
   @moduledoc """
-  Device data and command parsing and creation.
+  Device data, command parsing, and command creation.
 
   This module is responsible for identifying devices, parsing incoming messages, and
   creating commands to send to the device based on device specific information.

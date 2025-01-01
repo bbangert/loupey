@@ -82,7 +82,7 @@ defmodule Loupey.DeviceHandler do
     :ok = Circuits.UART.open(uarts_pid, device.tty, speed: 256_000, active: false)
     :ok = Circuits.UART.write(uarts_pid, @ws_upgrade_header)
     {:ok, _} = Circuits.UART.read(uarts_pid)
-    {:ok, handler_pid} = handler.start_link(device)
+    {:ok, handler_pid} = handler.start_link(self())
 
     :ok =
       Circuits.UART.configure(uarts_pid, framing: {Loupey.Framing.Websocket, []}, active: true)
