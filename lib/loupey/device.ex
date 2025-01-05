@@ -4,6 +4,7 @@ defmodule Loupey.Device do
 
   This module is responsible for identifying devices, parsing incoming messages, and
   creating commands to send to the device based on device specific information.
+
   """
 
   use TypedStruct
@@ -297,26 +298,26 @@ defmodule Loupey.Device do
     {@commands.framebuff, <<display.id::binary, header::binary, buffer::binary>>}
   end
 
-  @spec draw_image_command(Loupey.Device.t(), button_number(), Loupey.Image.t()) :: command()
-  def draw_image_command(device, button_id, image) do
-    {x, y} = find_key_offset(device, button_id)
-    # Center the image if it is smaller than the key size.
-    offset_x =
-      case image.width < 90 do
-        true -> round((device.variant_info.key_size - image.width) / 2)
-        false -> 0
-      end
+  @doc """
+  Create a command to draw an image to a key.
+  """
+  @spec draw_image_to_key_command(Loupey.Device.t(), non_neg_integer(), Loupey.Image.t(), Keyword.t()) :: command()
+  def draw_image_to_key_command(device, key_number, image, options) do
+    {x, y} = find_key_offset(device, key_number)
+    key_size = device.variant_info.key_size
+    background_color = Keyword.get(options, :background_color, "#000000")
 
-    offset_y =
-      case image.height < 90 do
-        true -> round((device.variant_info.key_size - image.height) / 2)
-        false -> 0
+    image =
+      if image.width < key_size or image.height < key_size do
+        Loupey.Image.embed_on_background!(image, key_size, key_size, background_color)
+      else
+        image
       end
 
     draw_buffer_command(
       device,
-      {:center, image.width, image.height, x + offset_x, y + offset_y},
-      image.data
+      {:center, image.width, image.height, x, y},
+      Loupey.Image.image_to_rgb565_binary!(image.image)
     )
   end
 

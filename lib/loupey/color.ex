@@ -8,6 +8,14 @@ defmodule Loupey.Color do
   @doc """
   Create a binary representation of a color that can be used to fill a sliders dimensions, optionally
   filling a percentage of the slider from the bottom up.
+
+  ### Arguments:
+
+  * `color` - A string in the format "#RRGGBB".
+  * `width` - The width of the slider.
+  * `height` - The height of the slider.
+  * `percent` - The percentage of the slider to fill (default: 100).
+
   """
   @spec fill_slider_color(String.t(), integer(), integer()) :: nonempty_binary()
   @spec fill_slider_color(String.t(), integer(), integer(), number()) :: nonempty_binary()
@@ -20,6 +28,12 @@ defmodule Loupey.Color do
 
   @doc """
   Create a binary in RGB565 of a color for the given quantity of pixels.
+
+  ### Arguments:
+
+  * `color` - A string in the format "#RRGGBB".
+  * `count` - The number of pixels to fill.
+
   """
   @spec fill_key_color(String.t(), non_neg_integer()) :: nonempty_binary()
   def fill_key_color(color, count) do
@@ -43,6 +57,14 @@ defmodule Loupey.Color do
 
   @doc """
   Parse a hex color string into a list of R, G, B integers.
+
+  ### Arguments:
+
+  * `color_hex` - A string in the format "#RRGGBB".
+
+  ### Returns
+
+  * `[integer(), ...]` - A list of R, G, B integers
   """
   @spec parse_color(String.t()) :: [integer(), ...]
   def parse_color("#" <> color_hex) do
@@ -55,6 +77,15 @@ defmodule Loupey.Color do
 
   @doc """
   Convert an RGB color to RGB565 LE format.
+
+  ### Arguments:
+
+  * `rgb` - A list of R, G, B integers
+
+  ### Returns
+
+  * `rgb565` - A binary in little-endian format
+
   """
   @spec rgb_to_rgb565([integer(), ...]) :: <<_::16>>
   def rgb_to_rgb565([r, g, b]) do
@@ -66,11 +97,9 @@ defmodule Loupey.Color do
     <<color::little-16>>
   end
 
+  @spec rgb_to_rgb565(nonempty_binary()) :: binary()
+  def rgb_to_rgb565(<<r, g, b, rest::binary>>), do: [rgb_to_rgb565([r, g, b]), rgb_to_rgb565(rest)]
+
   @spec rgb_to_rgb565(binary()) :: binary()
-  def rgb_to_rgb565(<<r, g, b, rest::binary>>) do
-    [rgb_to_rgb565([r, g, b]), rgb_to_rgb565(rest)]
-  end
-  def rgb_to_rgb565(<<>>) do
-    <<>>
-  end
+  def rgb_to_rgb565(<<>>), do: <<>>
 end

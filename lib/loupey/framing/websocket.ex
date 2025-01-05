@@ -1,4 +1,16 @@
 defmodule Loupey.Framing.Websocket do
+  @moduledoc """
+  A websocket frame handler for Loupey.
+
+  This is a simple implementation of the `Circuits.UART.Framing` behaviour
+  for handling websocket frames. It only handles parsing websocket frames
+  that are received from the device and not sent as the sending behaviour
+  is handled by the `DeviceHandler` due to limitations on data size that can
+  be sent in one UART write.
+
+  This handler is used by the `DeviceHandler` to parse incoming messages
+  from the device and is not intended for direct use.
+  """
   @behaviour Circuits.UART.Framing
 
   defmodule State do
@@ -8,10 +20,6 @@ defmodule Loupey.Framing.Websocket do
 
   def init(_args), do: {:ok, %State{max_length: 14096}}
 
-  # Unfortunately the framing behaviour is not well suited for payloads
-  # that need multiple write's to be completed due to size restrictions
-  # on each UART write. Actual websocket framing is done in the
-  # DeviceHandler.
   def add_framing(data, state), do: {:ok, data, state}
 
   def remove_framing(data, state) do

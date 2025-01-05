@@ -35,7 +35,14 @@ defmodule Loupey.DeviceHandler do
 
   @doc """
   Set the brightness of the display. The value should be between 0 and 1 in increments of 0.1.
+
+  ### Arguments:
+
+  * `pid` - The device handler pid.
+  * `value` - The brightness value.
+
   """
+  @spec set_brightness(pid(), number()) :: any()
   def set_brightness(pid, value) do
     GenServer.call(pid, {:set_brightness, value})
   end
@@ -43,36 +50,119 @@ defmodule Loupey.DeviceHandler do
   @doc """
   Set the color of a button.
 
-  Parameters:
-    * `id` - The button id.
-    * `color` - The color as a string in the format "#RRGGBB".
+  ### Arguments:
+
+  * `pid` - The device handler pid.
+  * `button_number` - The button number, indexed from 0.
+  * `color` - The color as a string in the format "#RRGGBB".
+
   """
   @spec set_button_color(pid(), Loupey.Device.button_number(), String.t()) :: any()
-  def set_button_color(pid, id, color) do
-    GenServer.call(pid, {:set_button_color, id, color})
+  def set_button_color(pid, button_number, color) do
+    GenServer.call(pid, {:set_button_color, button_number, color})
   end
 
-  def draw_buffer(pid, id, width, height, x, y, buffer) do
-    GenServer.call(pid, {:draw_buffer, id, width, height, x, y, buffer})
+  @doc """
+  Draw a buffer to the display.
+
+  Note that this function will error if the width/height of the buffer size is not equal
+  to the quantity of bytes in the buffer needed.
+
+  ### Arguments:
+
+  * `pid` - The device handler pid.
+  * `display_id` - The display id.
+  * `width` - The width of the buffer.
+  * `height` - The height of the buffer.
+  * `x` - The x position of the buffer.
+  * `y` - The y position of the buffer.
+  * `buffer` - The binary buffer to draw.
+
+  """
+  @spec draw_buffer!(
+          pid(),
+          :left | :right | :center,
+          integer(),
+          integer(),
+          integer(),
+          integer(),
+          binary()
+        ) :: any()
+  def draw_buffer!(pid, display_id, width, height, x, y, buffer) do
+    buffer_size = width * height * 2
+
+    if byte_size(buffer) != buffer_size do
+      raise ArgumentError,
+            "Buffer size of #{byte_size(buffer)} bytes does not match the dimensions of #{width}x#{height}x2 bytes"
+    end
+
+    GenServer.call(pid, {:draw_buffer, display_id, width, height, x, y, buffer})
   end
 
-  @spec draw_image(pid(), Loupey.Device.button_number(), Loupey.Image.t()) :: any()
-  def draw_image(pid, button_id, image) do
-    GenServer.call(pid, {:draw_image, button_id, image})
+  @doc """
+  Draw an image to the given key.
+
+  ### Arguments:
+
+  * `pid` - The device handler pid.
+  * `key_number` - The key number, indexed from 0.
+  * `image` - The image to draw.
+  * `options` - The options to pass to the GenServer call.
+
+  ### Options:
+
+  * `background_color` - The background color as a string in the format "#RRGGBB". (default: "#000000")
+                          This is only applied if the image is smaller than the key size.
+  """
+  @spec draw_image_to_key(pid(), non_neg_integer(), Loupey.Image.t()) :: any()
+  @spec draw_image_to_key(pid(), non_neg_integer(), Loupey.Image.t(), Keyword.t()) :: any()
+  def draw_image_to_key(pid, key_number, image, options \\ [background_color: "#000000"]) do
+    GenServer.call(pid, {:draw_image_to_key, key_number, image, options})
   end
 
-  def fill_key(pid, id, color) do
-    GenServer.call(pid, {:fill_key, id, color})
+  @doc """
+  Fill a key with the given color on the display.
+
+  ### Arguments:
+
+  * `pid` - The device handler pid.
+  * `key_number` - The key number, indexed from 0.
+  * `color` - The color as a string in the format "#RRGGBB".
+
+  """
+  @spec fill_key(pid(), non_neg_integer(), String.t()) :: any()
+  def fill_key(pid, key_number, color) do
+    GenServer.call(pid, {:fill_key, key_number, color})
   end
 
-  @spec fill_slider(pid(), :left | :right, String.t()) :: any()
-  def fill_slider(pid, id, color, percent \\ 100) do
-    GenServer.call(pid, {:fill_slider, id, color, percent})
+  @doc """
+  Fill a slider on the display.
+
+  ### Arguments:
+
+  * `pid` - The device handler pid.
+  * `slider_id` - The slider id (left or right).
+  * `color` - The color as a string in the format "#RRGGBB".
+  * `percent` - The percent to fill the slider (default: 100).
+
+  """
+  @spec fill_slider(pid(), :left | :right, String.t(), integer()) :: any()
+  def fill_slider(pid, slider_id, color, percent \\ 100) do
+    GenServer.call(pid, {:fill_slider, slider_id, color, percent})
   end
 
+  @doc """
+  Refresh a display.
+
+  ### Arguments:
+
+  * `pid` - The device handler pid.
+  * `display_id` - The display id (left, center, or right).
+
+  """
   @spec refresh(pid(), :left | :center | :right) :: any()
-  def refresh(pid, id) do
-    GenServer.call(pid, {:refresh, id})
+  def refresh(pid, display_id) do
+    GenServer.call(pid, {:refresh, display_id})
   end
 
   # gen_server callbacks
@@ -135,9 +225,9 @@ defmodule Loupey.DeviceHandler do
     end)
   end
 
-  def handle_call({:draw_image, button_id, image}, from, state) do
+  def handle_call({:draw_image_to_key, key_number, image, opts}, from, state) do
     run_command(state, from, fn state ->
-      Loupey.Device.draw_image_command(state.device, button_id, image)
+      Loupey.Device.draw_image_to_key_command(state.device, key_number, image, opts)
     end)
   end
 

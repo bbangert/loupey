@@ -4,12 +4,16 @@ defmodule Loupey.Device.Variant.Live do
   # A few common constants used.
   @key_size 90
   @columns 4
+  @rows 3
   @display_center_width 360
   @display_left_width 60
   @display_right_width 60
 
   @moduledoc """
   Variant specific configuration and handling for Loupedeck Live.
+
+  Used internally by `Loupey.Device` to determine if this variant is the correct variant for the
+  device and to provide variant specific configuration and handling.
   """
 
   def is_variant?(device_info), do: match?(%{product_id: 0x0004, vendor_id: 0x2EC2}, device_info)
@@ -18,10 +22,11 @@ defmodule Loupey.Device.Variant.Live do
     %{
       type: "Loupedeck Live",
       key_size: @key_size,
+      keys: 0..(@columns * @rows - 1),
       buttons: [0, 1, 2, 3, 4, 5, 6, 7],
       knobs: ["knobCL", "knobCR", "knobTL", "knobTR", "knobBL", "knobBR"],
       columns: @columns,
-      rows: 3,
+      rows: @rows,
       displays: %{
         center: %{id: <<0x00, 0x4D>>, width: @display_center_width, height: 270, offset: {60, 0}},
         left: %{id: <<0x00, 0x4D>>, width: @display_left_width, height: 270},
