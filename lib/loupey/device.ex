@@ -301,7 +301,12 @@ defmodule Loupey.Device do
   @doc """
   Create a command to draw an image to a key.
   """
-  @spec draw_image_to_key_command(Loupey.Device.t(), non_neg_integer(), Loupey.Image.t(), Keyword.t()) :: command()
+  @spec draw_image_to_key_command(
+          Loupey.Device.t(),
+          non_neg_integer(),
+          Loupey.Image.t(),
+          Keyword.t()
+        ) :: command()
   def draw_image_to_key_command(device, key_number, image, options) do
     {x, y} = find_key_offset(device, key_number)
     key_size = device.variant_info.key_size
@@ -309,9 +314,14 @@ defmodule Loupey.Device do
 
     image =
       if image.width < key_size or image.height < key_size do
-        Loupey.Image.embed_on_background!(image, key_size, key_size, background_color)
+        Loupey.Image.embed_on_background!(
+          Loupey.Image.load_image!(image.path, image.max),
+          key_size,
+          key_size,
+          background_color
+        )
       else
-        image
+        Loupey.Image.load_image!(image.path, image.max)
       end
 
     draw_buffer_command(

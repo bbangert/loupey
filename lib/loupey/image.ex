@@ -14,6 +14,7 @@ defmodule Loupey.Image do
     field(:path, String.t())
     field(:width, integer())
     field(:height, integer())
+    field(:max, integer())
   end
 
   @spec load_image!(String.t()) :: t()
@@ -29,6 +30,7 @@ defmodule Loupey.Image do
       path: path,
       width: Image.width(img),
       height: Image.height(img),
+      max: max
     }
   end
 
@@ -52,10 +54,10 @@ defmodule Loupey.Image do
       |> Image.flatten!()
 
     %Loupey.Image{
-      image: composite_img,
-      path: img.path,
-      width: width,
-      height: height,
+      img
+      | image: composite_img,
+        width: width,
+        height: height
     }
   end
 
