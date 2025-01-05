@@ -65,4 +65,12 @@ defmodule Loupey.Color do
     color = r5 ||| g6 ||| b5
     <<color::little-16>>
   end
+
+  @spec rgb_to_rgb565(binary()) :: binary()
+  def rgb_to_rgb565(<<r, g, b, rest::binary>>) do
+    [rgb_to_rgb565([r, g, b]), rgb_to_rgb565(rest)]
+  end
+  def rgb_to_rgb565(<<>>) do
+    <<>>
+  end
 end
