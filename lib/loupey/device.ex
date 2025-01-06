@@ -312,22 +312,17 @@ defmodule Loupey.Device do
     key_size = device.variant_info.key_size
     background_color = Keyword.get(options, :background_color, "#000000")
 
-    image =
+    vips_image =
       if image.width < key_size or image.height < key_size do
-        Loupey.Image.embed_on_background!(
-          image,
-          key_size,
-          key_size,
-          background_color
-        )
+        Loupey.Image.embed_on_background!(image, key_size, key_size, background_color)
       else
-        image
+        Loupey.Image.to_vips_image!(image)
       end
 
     draw_buffer_command(
       device,
-      {:center, image.width, image.height, x, y},
-      Loupey.Image.image_to_rgb565_binary!(image.image)
+      {:center, key_size, key_size, x, y},
+      Loupey.Image.image_to_rgb565_binary!(vips_image)
     )
   end
 
