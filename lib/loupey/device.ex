@@ -315,13 +315,13 @@ defmodule Loupey.Device do
     image =
       if image.width < key_size or image.height < key_size do
         Loupey.Image.embed_on_background!(
-          Loupey.Image.load_image!(image.path, image.max),
+          image,
           key_size,
           key_size,
           background_color
         )
       else
-        Loupey.Image.load_image!(image.path, image.max)
+        image
       end
 
     draw_buffer_command(

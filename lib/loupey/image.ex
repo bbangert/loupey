@@ -22,6 +22,7 @@ defmodule Loupey.Image do
   def load_image!(path, max \\ 80) do
     img =
       path
+      |> Image.open!()
       |> Image.thumbnail!(max)
       |> Image.flatten!()
 
