@@ -29,10 +29,6 @@ defmodule Loupey.DeviceHandler do
     GenServer.start_link(__MODULE__, {device, handler})
   end
 
-  def stop(pid) do
-    GenServer.stop(pid)
-  end
-
   @doc """
   Set the brightness of the display. The value should be between 0 and 1 in increments of 0.1.
 
@@ -165,6 +161,18 @@ defmodule Loupey.DeviceHandler do
     GenServer.call(pid, {:refresh, display_id})
   end
 
+  @doc """
+  Get the variant info.
+
+  ### Arguments:
+
+  * `pid` - The device handler pid.
+
+  """
+  def variant_info(pid) do
+    GenServer.call(pid, :variant_info)
+  end
+
   # gen_server callbacks
 
   def init({device, handler}) do
@@ -172,12 +180,19 @@ defmodule Loupey.DeviceHandler do
     :ok = Circuits.UART.open(uarts_pid, device.tty, speed: 256_000, active: false)
     :ok = Circuits.UART.write(uarts_pid, @ws_upgrade_header)
     {:ok, _} = Circuits.UART.read(uarts_pid)
-    {:ok, handler_pid} = handler.start_link(self())
 
     :ok =
       Circuits.UART.configure(uarts_pid, framing: {Loupey.Framing.Websocket, []}, active: true)
 
     Logger.info("UARTS configuration: #{inspect(Circuits.UART.configuration(uarts_pid))}")
+
+    {:ok, handler_pid} =
+      handler.start_link({device, self(), %{
+        0 => %{
+          {:center, 0} => %{:icon => "icons/Audio_On.png", :max => 80},
+          {:center, 1} => %{:icon => "icons/Audio_Off.png", :max => 80},
+        }
+      }})
 
     {:ok,
      %State{device: device, uarts_pid: uarts_pid, handler_pid: handler_pid, handler: handler}}
@@ -231,6 +246,10 @@ defmodule Loupey.DeviceHandler do
     end)
   end
 
+  def handle_call(:variant_info, _from, state) do
+    {:reply, state.device.variant_info, state}
+  end
+
   defp run_command(state, from, command) do
     {state, transaction_id} = next_transaction_id(state, from)
     {cmd, data} = command.(state)
@@ -262,7 +281,7 @@ defmodule Loupey.DeviceHandler do
           state
 
         _ ->
-          state.handler.handle_message(state.handler_pid, message)
+          state.handler.handle_message(message)
           state
       end
 

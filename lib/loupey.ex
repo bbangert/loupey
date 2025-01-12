@@ -3,8 +3,14 @@ defmodule Loupey do
   A library for communicating with Loupedeck devices.
   """
 
-  def start() do
+  def start_link() do
     [device] = Circuits.UART.enumerate() |> Loupey.Device.discover_devices()
-    Loupey.DeviceHandler.start_link({device, Loupey.Handler.Default})
+    Supervisor.start_link(
+      [
+        Loupey.Registry,
+        {Loupey.DeviceHandler, {device, Loupey.Handler.ButtonController}}
+      ],
+      strategy: :one_for_one
+    )
   end
 end

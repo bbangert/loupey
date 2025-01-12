@@ -5,6 +5,9 @@ defmodule Loupey.Device do
   This module is responsible for identifying devices, parsing incoming messages, and
   creating commands to send to the device based on device specific information.
 
+  Internal implementation details used by the `Loupey.DeviceHandler`, library users should
+  not need to use this module directly.
+
   """
 
   use TypedStruct
