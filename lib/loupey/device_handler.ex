@@ -110,8 +110,8 @@ defmodule Loupey.DeviceHandler do
   * `background_color` - The background color as a string in the format "#RRGGBB". (default: "#000000")
                           This is only applied if the image is smaller than the key size.
   """
-  @spec draw_image_to_key(pid(), non_neg_integer(), Loupey.Image.t()) :: any()
-  @spec draw_image_to_key(pid(), non_neg_integer(), Loupey.Image.t(), Keyword.t()) :: any()
+  @spec draw_image_to_key(pid(), non_neg_integer(), Loupey.Graphics.Image.t()) :: any()
+  @spec draw_image_to_key(pid(), non_neg_integer(), Loupey.Graphics.Image.t(), Keyword.t()) :: any()
   def draw_image_to_key(pid, key_number, image, options \\ [background_color: "#000000"]) do
     GenServer.call(pid, {:draw_image_to_key, key_number, image, options})
   end

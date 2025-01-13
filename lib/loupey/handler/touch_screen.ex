@@ -34,7 +34,7 @@ defmodule Loupey.Handler.TouchScreen do
   end
 
   def handle_cast(:draw_state, state) do
-    img = Loupey.Image.new!(state.touch_config.icon, state.touch_config.max)
+    img = Loupey.Graphics.Image.new!(state.touch_config.icon, state.touch_config.max)
     case state.touch_name do
       {:center, key_id} -> Loupey.Handler.LayoutRouter.draw_image_to_key(state.button_id, key_id, img)
       _ -> nil

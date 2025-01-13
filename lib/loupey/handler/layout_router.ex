@@ -69,7 +69,7 @@ defmodule Loupey.Handler.LayoutRouter do
     {:noreply, state}
   end
 
-  def handle_cast({:handle_message, {:button_press, button_id, :up}}, state) do
+  def handle_cast({:handle_message, {:button_press, button_id, :up}}, state) when is_integer(button_id) do
     prior_button_id = state.active_layout
     Loupey.DeviceHandler.set_button_color(state.device_handler_pid, prior_button_id, "#000000")
     Loupey.DeviceHandler.set_button_color(state.device_handler_pid, button_id, "#22ff22")

@@ -307,7 +307,7 @@ defmodule Loupey.Device do
   @spec draw_image_to_key_command(
           Loupey.Device.t(),
           non_neg_integer(),
-          Loupey.Image.t(),
+          Loupey.Graphics.Image.t(),
           Keyword.t()
         ) :: command()
   def draw_image_to_key_command(device, key_number, image, options) do
@@ -317,15 +317,15 @@ defmodule Loupey.Device do
 
     vips_image =
       if image.width < key_size or image.height < key_size do
-        Loupey.Image.embed_on_background!(image, key_size, key_size, background_color)
+        Loupey.Graphics.Image.embed_on_background!(image, key_size, key_size, background_color)
       else
-        Loupey.Image.to_vips_image!(image)
+        Loupey.Graphics.Image.to_vips_image!(image)
       end
 
     draw_buffer_command(
       device,
       {:center, key_size, key_size, x, y},
-      Loupey.Image.image_to_rgb565_binary!(vips_image)
+      Loupey.Graphics.Image.image_to_rgb565_binary!(vips_image)
     )
   end
 

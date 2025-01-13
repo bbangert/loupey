@@ -1,4 +1,4 @@
-defmodule Loupey.Image do
+defmodule Loupey.Graphics.Image do
   @moduledoc """
   Image loading, parsing, resizing and conversion utilities.
   """
