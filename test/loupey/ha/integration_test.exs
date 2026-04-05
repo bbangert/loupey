@@ -19,7 +19,7 @@ defmodule Loupey.HA.IntegrationTest do
   use ExUnit.Case
 
   alias Loupey.HA
-  alias Loupey.HA.{Config, StateCache, ServiceCall}
+  alias Loupey.HA.{Config, ServiceCall, StateCache}
 
   @moduletag :ha_integration
   @state_timeout_ms 10_000
@@ -57,7 +57,7 @@ defmodule Loupey.HA.IntegrationTest do
   describe "connection and state" do
     test "loads entities into state cache" do
       states = HA.get_all_states()
-      assert length(states) > 0
+      assert states != []
       IO.puts("\n  Loaded #{length(states)} entities from HA")
     end
 
@@ -79,7 +79,7 @@ defmodule Loupey.HA.IntegrationTest do
       # Verify get_domain works
       if Enum.any?(domains, fn {d, _} -> d == "light" end) do
         lights = HA.get_domain("light")
-        assert length(lights) > 0
+        assert lights != []
         IO.puts("  Sample light: #{hd(lights).entity_id} = #{hd(lights).state}")
       end
     end

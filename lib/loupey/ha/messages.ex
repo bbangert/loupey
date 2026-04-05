@@ -33,7 +33,7 @@ defmodule Loupey.HA.Messages do
           | :auth_ok
           | {:auth_invalid, String.t()}
           | {:result, integer(), boolean(), term()}
-          | {:state_changed, EntityState.t(), EntityState.t() | nil}
+          | {:state_changed, integer(), EntityState.t(), EntityState.t() | nil}
           | {:event, integer(), String.t(), map()}
           | {:states, integer(), [EntityState.t()]}
           | {:unknown, map()}

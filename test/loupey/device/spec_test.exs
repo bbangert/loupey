@@ -1,7 +1,7 @@
 defmodule Loupey.Device.SpecTest do
   use ExUnit.Case, async: true
 
-  alias Loupey.Device.{Spec, Control, Display}
+  alias Loupey.Device.{Control, Display, Spec}
 
   @spec test_spec() :: Spec.t()
   defp test_spec do

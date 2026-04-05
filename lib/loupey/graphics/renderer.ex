@@ -31,6 +31,7 @@ defmodule Loupey.Graphics.Renderer do
 
   alias Loupey.Device.Control
   alias Loupey.Graphics.Format
+  alias Vix.Vips.Operation
 
   @doc """
   Render a frame for a display control from render instructions.
@@ -57,7 +58,7 @@ defmodule Loupey.Graphics.Renderer do
 
   Convenience function for the common case of filling a control with a single color.
   """
-  @spec render_solid(Control.t(), String.t()) :: binary()
+  @spec render_solid(Control.t(), term()) :: binary()
   def render_solid(%Control{display: display}, color) do
     Image.new!(display.width, display.height, color: color)
     |> Image.flatten!()
@@ -93,48 +94,18 @@ defmodule Loupey.Graphics.Renderer do
 
   defp apply_icon(image, _instructions, _width, _height), do: image
 
-  # Text: simple string shorthand
   defp apply_text(image, %{text: text}, width, height) when is_binary(text) do
     apply_text(image, %{text: %{content: text}}, width, height)
   end
 
-  # Text: full map with options
   defp apply_text(image, %{text: %{content: content} = opts}, width, height) do
     color = Map.get(opts, :color, "#FFFFFF")
     font_size = Map.get(opts, :font_size, 16)
-    align = Map.get(opts, :align, :center)
-    valign = Map.get(opts, :valign, :middle)
-    orientation = Map.get(opts, :orientation, :horizontal)
 
     case Image.Text.text(content, text_fill_color: color, font_size: font_size) do
       {:ok, text_img} ->
-        text_img =
-          case orientation do
-            :vertical -> Vix.Vips.Operation.rot!(text_img, :VIPS_ANGLE_D270)
-            _ -> text_img
-          end
-
-        text_w = Image.width(text_img)
-        text_h = Image.height(text_img)
-
-        x =
-          case align do
-            :left -> 2
-            :right -> width - text_w - 2
-            _ -> div(width - text_w, 2)
-          end
-
-        y =
-          case valign do
-            :top -> 2
-            :bottom -> height - text_h - 2
-            _ -> div(height - text_h, 2)
-          end
-
-        # Clamp to bounds
-        x = max(0, min(x, width - 1))
-        y = max(0, min(y, height - 1))
-
+        text_img = maybe_rotate(text_img, Map.get(opts, :orientation, :horizontal))
+        {x, y} = text_position(text_img, width, height, opts)
         Image.compose!(image, text_img, x: x, y: y)
 
       _ ->
@@ -143,6 +114,27 @@ defmodule Loupey.Graphics.Renderer do
   end
 
   defp apply_text(image, _instructions, _width, _height), do: image
+
+  defp maybe_rotate(text_img, :vertical), do: Operation.rot!(text_img, :VIPS_ANGLE_D270)
+  defp maybe_rotate(text_img, _), do: text_img
+
+  defp text_position(text_img, width, height, opts) do
+    text_w = Image.width(text_img)
+    text_h = Image.height(text_img)
+
+    x = align_x(Map.get(opts, :align, :center), width, text_w)
+    y = align_y(Map.get(opts, :valign, :middle), height, text_h)
+
+    {max(0, min(x, width - 1)), max(0, min(y, height - 1))}
+  end
+
+  defp align_x(:left, _width, _text_w), do: 2
+  defp align_x(:right, width, text_w), do: width - text_w - 2
+  defp align_x(_, width, text_w), do: div(width - text_w, 2)
+
+  defp align_y(:top, _height, _text_h), do: 2
+  defp align_y(:bottom, height, text_h), do: height - text_h - 2
+  defp align_y(_, height, text_h), do: div(height - text_h, 2)
 
   defp fill_rect(:to_top, amount, width, height) do
     fill_h = round(height * amount / 100)

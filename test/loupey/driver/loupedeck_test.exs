@@ -1,9 +1,10 @@
 defmodule Loupey.Driver.LoupedeckTest do
   use ExUnit.Case, async: true
 
+  alias Loupey.Device.Spec
   alias Loupey.Driver.Loupedeck
   alias Loupey.Events.{PressEvent, RotateEvent, TouchEvent}
-  alias Loupey.RenderCommands.{SetLED, SetBrightness}
+  alias Loupey.RenderCommands.{SetBrightness, SetLED}
 
   defp driver_state, do: Loupedeck.new_driver_state()
 
@@ -21,12 +22,12 @@ defmodule Loupey.Driver.LoupedeckTest do
     test "returns a spec with controls" do
       spec = Loupedeck.device_spec()
       assert spec.type == "Loupedeck Live"
-      assert length(spec.controls) > 0
+      assert spec.controls != []
     end
 
     test "spec includes knobs with rotate and press" do
       spec = Loupedeck.device_spec()
-      knob = Loupey.Device.Spec.find_control(spec, :knob_tl)
+      knob = Spec.find_control(spec, :knob_tl)
       assert knob
       assert MapSet.member?(knob.capabilities, :rotate)
       assert MapSet.member?(knob.capabilities, :press)
@@ -34,7 +35,7 @@ defmodule Loupey.Driver.LoupedeckTest do
 
     test "spec includes display keys" do
       spec = Loupedeck.device_spec()
-      key = Loupey.Device.Spec.find_control(spec, {:key, 0})
+      key = Spec.find_control(spec, {:key, 0})
       assert key
       assert MapSet.member?(key.capabilities, :touch)
       assert MapSet.member?(key.capabilities, :display)
@@ -44,7 +45,7 @@ defmodule Loupey.Driver.LoupedeckTest do
 
     test "spec includes LED buttons" do
       spec = Loupedeck.device_spec()
-      btn = Loupey.Device.Spec.find_control(spec, {:button, 0})
+      btn = Spec.find_control(spec, {:button, 0})
       assert btn
       assert MapSet.member?(btn.capabilities, :press)
       assert MapSet.member?(btn.capabilities, :led)
@@ -52,7 +53,7 @@ defmodule Loupey.Driver.LoupedeckTest do
 
     test "spec includes strips" do
       spec = Loupedeck.device_spec()
-      left = Loupey.Device.Spec.find_control(spec, :left_strip)
+      left = Spec.find_control(spec, :left_strip)
       assert left
       assert left.display.width == 60
       assert left.display.height == 270

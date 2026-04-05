@@ -18,12 +18,12 @@ defmodule Loupey.IntegrationTest do
 
   use ExUnit.Case
 
+  alias Loupey.Device.{Control, Spec}
   alias Loupey.Devices
   alias Loupey.DeviceServer
-  alias Loupey.Device.{Spec, Control}
-  alias Loupey.RenderCommands.{DrawBuffer, SetLED, SetBrightness}
-  alias Loupey.Graphics.Renderer
   alias Loupey.Events.{PressEvent, RotateEvent, TouchEvent}
+  alias Loupey.Graphics.Renderer
+  alias Loupey.RenderCommands.{DrawBuffer, SetBrightness, SetLED}
 
   @moduletag :integration
   @input_timeout_ms 15_000
@@ -62,7 +62,7 @@ defmodule Loupey.IntegrationTest do
   describe "device discovery" do
     test "finds at least one supported device" do
       devices = Devices.discover()
-      assert length(devices) > 0, "No supported devices found"
+      assert devices != [], "No supported devices found"
 
       for {driver, tty} <- devices do
         IO.puts("  Found: #{inspect(driver)} on #{tty}")
@@ -73,7 +73,7 @@ defmodule Loupey.IntegrationTest do
   describe "display rendering" do
     test "renders solid colors to all display keys", %{device_id: id, spec: spec} do
       keys = Spec.controls_with_capability(spec, :display)
-      assert length(keys) > 0, "No display controls found"
+      assert keys != [], "No display controls found"
 
       colors = ["#FF0000", "#00FF00", "#0000FF", "#FFFF00", "#FF00FF", "#00FFFF"]
 
@@ -404,7 +404,7 @@ defmodule Loupey.IntegrationTest do
   describe "LED rendering" do
     test "sets LED colors on all LED buttons", %{device_id: id, spec: spec} do
       led_controls = Spec.controls_with_capability(spec, :led)
-      assert length(led_controls) > 0, "No LED controls found"
+      assert led_controls != [], "No LED controls found"
 
       colors = ["#FF0000", "#00FF00", "#0000FF", "#FFFF00", "#FF00FF", "#00FFFF", "#FFFFFF", "#FF8800"]
 

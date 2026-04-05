@@ -8,9 +8,9 @@ defmodule Loupey.Driver.Loupedeck do
 
   @behaviour Loupey.Driver
 
-  alias Loupey.Device.Variant
+  alias Loupey.Device.{Spec, Variant}
   alias Loupey.Events.{PressEvent, RotateEvent, TouchEvent}
-  alias Loupey.RenderCommands.{DrawBuffer, SetLED, SetBrightness}
+  alias Loupey.RenderCommands.{DrawBuffer, SetBrightness, SetLED}
 
   @ws_upgrade_header "GET /index.html\nHTTP/1.1\nConnection: Upgrade\nUpgrade: websocket\nSec-WebSocket-Key: 123abc\n\n"
   @ws_close_frame <<0x88, 0x80, 0x00, 0x00, 0x00, 0x00>>
@@ -121,10 +121,6 @@ defmodule Loupey.Driver.Loupedeck do
         {:error, _} = error ->
           force_cleanup(uart_pid)
           error
-
-        error ->
-          force_cleanup(uart_pid)
-          {:error, error}
       end
     rescue
       e ->
@@ -206,7 +202,7 @@ defmodule Loupey.Driver.Loupedeck do
   @impl true
   def encode(%DrawBuffer{} = cmd) do
     spec = device_spec()
-    control = Loupey.Device.Spec.find_control(spec, cmd.control_id)
+    control = Spec.find_control(spec, cmd.control_id)
     display = control.display
 
     {x, y} =
@@ -293,7 +289,7 @@ defmodule Loupey.Driver.Loupedeck do
 
   defp parse_touch(driver_state, command, <<_, x::unsigned-big-16, y::unsigned-big-16, touch_id>>) do
     spec = driver_state.spec
-    control = Loupey.Device.Spec.resolve_touch(spec, x, y)
+    control = Spec.resolve_touch(spec, x, y)
 
     if control do
       {ox, oy} = control.display.offset || {0, 0}

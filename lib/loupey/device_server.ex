@@ -187,12 +187,12 @@ defmodule Loupey.DeviceServer do
     write_chunks(conn, buffer)
   end
 
-  defp write_chunks(%{uart_pid: uart_pid}, buffer) when byte_size(buffer) <= 15300 do
+  defp write_chunks(%{uart_pid: uart_pid}, buffer) when byte_size(buffer) <= 15_300 do
     Circuits.UART.write(uart_pid, buffer)
   end
 
   defp write_chunks(%{uart_pid: uart_pid} = conn, buffer) do
-    <<chunk::binary-size(15300), rest::binary>> = buffer
+    <<chunk::binary-size(15_300), rest::binary>> = buffer
     Circuits.UART.write(uart_pid, chunk)
     if byte_size(rest) > 0, do: write_chunks(conn, rest)
   end

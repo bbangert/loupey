@@ -1,7 +1,7 @@
 defmodule Loupey.HA.MessagesTest do
   use ExUnit.Case, async: true
 
-  alias Loupey.HA.{Messages, EntityState, ServiceCall}
+  alias Loupey.HA.{EntityState, Messages, ServiceCall}
 
   describe "parse/1 — auth messages" do
     test "parses auth_required" do

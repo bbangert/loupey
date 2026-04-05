@@ -1,7 +1,7 @@
 defmodule Loupey.Device.Variant.Live do
   @behaviour Loupey.Device.Variant
 
-  alias Loupey.Device.{Spec, Control, Display}
+  alias Loupey.Device.{Control, Display, Spec}
 
   @key_size 90
   @columns 4

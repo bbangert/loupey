@@ -74,59 +74,56 @@ defmodule Loupey.HA.Connection do
 
   @impl true
   def handle_frame({:text, json}, state) do
-    message = Messages.parse(json)
-
-    case message do
-      :auth_required ->
-        Logger.info("HA: auth required, sending token")
-        frame = {:text, Messages.encode_auth(state.config.token)}
-        {:reply, frame, state}
-
-      :auth_ok ->
-        Logger.info("HA: authenticated")
-        state = %{state | authenticated: true}
-        # Fetch all current states, then subscribe to changes
-        {state, get_states_frame} = send_msg(state, &Messages.encode_get_states/1)
-        state = %{state | get_states_id: state.next_id - 1}
-        {:reply, get_states_frame, state}
-
-      {:auth_invalid, reason} ->
-        Logger.error("HA: auth failed: #{reason}")
-        {:close, state}
-
-      {:states, id, entity_states} when id == state.get_states_id ->
-        Logger.info("HA: received #{length(entity_states)} entity states")
-        dispatch(state, {:initial_states, entity_states})
-
-        # Now subscribe to state_changed events
-        {state, sub_frame} = send_msg(state, &Messages.encode_subscribe/1)
-        state = %{state | subscribe_id: state.next_id - 1}
-        {:reply, sub_frame, state}
-
-      {:state_changed, _id, new_state, old_state} ->
-        dispatch(state, {:state_changed, new_state, old_state})
-        {:ok, state}
-
-      {:result, id, success, _result} ->
-        if not success do
-          Logger.warning("HA: command #{id} failed")
-        end
-
-        {callback, pending} = Map.pop(state.pending, id)
-        if callback, do: callback.({success, id})
-        {:ok, %{state | pending: pending}}
-
-      {:event, _id, type, _event} ->
-        Logger.debug("HA: unhandled event type: #{type}")
-        {:ok, state}
-
-      {:unknown, msg} ->
-        Logger.debug("HA: unknown message: #{inspect(msg)}")
-        {:ok, state}
-    end
+    json |> Messages.parse() |> handle_message(state)
   end
 
   def handle_frame(_frame, state) do
+    {:ok, state}
+  end
+
+  defp handle_message(:auth_required, state) do
+    Logger.info("HA: auth required, sending token")
+    {:reply, {:text, Messages.encode_auth(state.config.token)}, state}
+  end
+
+  defp handle_message(:auth_ok, state) do
+    Logger.info("HA: authenticated")
+    state = %{state | authenticated: true}
+    {state, get_states_frame} = send_msg(state, &Messages.encode_get_states/1)
+    {:reply, get_states_frame, %{state | get_states_id: state.next_id - 1}}
+  end
+
+  defp handle_message({:auth_invalid, reason}, state) do
+    Logger.error("HA: auth failed: #{reason}")
+    {:close, state}
+  end
+
+  defp handle_message({:states, id, entity_states}, %{get_states_id: id} = state) do
+    Logger.info("HA: received #{length(entity_states)} entity states")
+    dispatch(state, {:initial_states, entity_states})
+    {state, sub_frame} = send_msg(state, &Messages.encode_subscribe/1)
+    {:reply, sub_frame, %{state | subscribe_id: state.next_id - 1}}
+  end
+
+  defp handle_message({:state_changed, _id, new_state, old_state}, state) do
+    dispatch(state, {:state_changed, new_state, old_state})
+    {:ok, state}
+  end
+
+  defp handle_message({:result, id, success, _result}, state) do
+    unless success, do: Logger.warning("HA: command #{id} failed")
+    {callback, pending} = Map.pop(state.pending, id)
+    if callback, do: callback.({success, id})
+    {:ok, %{state | pending: pending}}
+  end
+
+  defp handle_message({:event, _id, type, _event}, state) do
+    Logger.debug("HA: unhandled event type: #{type}")
+    {:ok, state}
+  end
+
+  defp handle_message({:unknown, msg}, state) do
+    Logger.debug("HA: unknown message: #{inspect(msg)}")
     {:ok, state}
   end
 
