@@ -1,0 +1,30 @@
+entity_id: "{{ entity_id }}"
+input_rules:
+  - on: touch_start
+    action: call_service
+    domain: light
+    service: toggle
+    target: "{{ entity_id }}"
+output_rules:
+  - when: 'state == "on"'
+    background: "#1a2e1a"
+    icon: "icons/neon_blue/Lights_On.png"
+    text:
+      content: "ON"
+      color: "#44FF44"
+      font_size: 16
+      valign: bottom
+  - when: 'state == "off"'
+    background: "#2e1a1a"
+    icon: "icons/neon_blue/Lights_Off.png"
+    text:
+      content: "OFF"
+      color: "#FF4444"
+      font_size: 16
+      valign: bottom
+  - when: true
+    background: "#1a1a2e"
+    text:
+      content: "{{ state }}"
+      color: "#8888FF"
+      font_size: 18

@@ -27,6 +27,7 @@ defmodule Loupey.MixProject do
       {:typed_struct, "~> 0.3.0"},
       {:websockex, "~> 0.4.3"},
       {:jason, "~> 1.4"},
+      {:yaml_elixir, "~> 2.9"},
       {:credo, "~> 1.7", only: [:dev, :test], runtime: false},
       {:dialyxir, "~> 1.4", only: [:dev, :test], runtime: false}
     ]

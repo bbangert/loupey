@@ -1,0 +1,10 @@
+input_rules: []
+output_rules:
+  - when: true
+    background: "#2e0a0a"
+    icon: "icons/neon_blue/Power_Off.png"
+    text:
+      content: "EXIT"
+      color: "#FF4444"
+      font_size: 16
+      valign: bottom

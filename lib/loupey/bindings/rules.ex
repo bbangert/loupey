@@ -1,0 +1,137 @@
+defmodule Loupey.Bindings.Rules do
+  @moduledoc """
+  Pure functions for matching input and output rules against events and state.
+
+  All functions are side-effect free — they take data in and return data out.
+  """
+
+  alias Loupey.Bindings.{Binding, Expression}
+  alias Loupey.Events.{PressEvent, RotateEvent, TouchEvent}
+  alias Loupey.HA.EntityState
+
+  # -- Input rule matching --
+
+  @doc """
+  Match an input event against a binding's input rules.
+
+  Filters rules by trigger type, then evaluates `when` conditions top-down.
+  Returns `{:action, action_type, params}` for the first match, or `:no_match`.
+
+  The entity_state is used to evaluate `when` conditions and resolve
+  template expressions in action params.
+  """
+  @spec match_input(Loupey.Events.t(), Binding.t(), EntityState.t() | nil, Loupey.Device.Control.t() | nil) ::
+          {:action, String.t(), map()} | :no_match
+  def match_input(event, binding, entity_state, control \\ nil)
+
+  def match_input(event, %Binding{input_rules: rules}, entity_state, control) do
+    trigger = event_to_trigger(event)
+
+    event_context =
+      event
+      |> build_event_context()
+      |> enrich_event_context(control)
+
+    rules
+    |> Enum.filter(&(&1.on == trigger))
+    |> Enum.find_value(:no_match, fn rule ->
+      if matches_condition?(rule.when, entity_state) do
+        params = resolve_params(rule.params, entity_state, event_context)
+        {:action, rule.action, params}
+      end
+    end)
+  end
+
+  # -- Output rule matching --
+
+  @doc """
+  Match a binding's output rules against the current entity state.
+
+  Evaluates `when` conditions top-down, returns `{:match, instructions}`
+  for the first match with all template expressions resolved, or `:no_match`.
+  """
+  @spec match_output(Binding.t(), EntityState.t() | nil) ::
+          {:match, map()} | :no_match
+  def match_output(%Binding{output_rules: []}, _entity_state), do: :no_match
+
+  def match_output(%Binding{output_rules: rules}, entity_state) do
+    Enum.find_value(rules, :no_match, fn rule ->
+      if matches_condition?(rule.when, entity_state) do
+        {:match, resolve_instructions(rule.instructions, entity_state)}
+      end
+    end)
+  end
+
+  # -- Helpers --
+
+  defp event_to_trigger(%PressEvent{action: :press}), do: :press
+  defp event_to_trigger(%PressEvent{action: :release}), do: :release
+  defp event_to_trigger(%RotateEvent{direction: :cw}), do: :rotate_cw
+  defp event_to_trigger(%RotateEvent{direction: :ccw}), do: :rotate_ccw
+  defp event_to_trigger(%TouchEvent{action: :start}), do: :touch_start
+  defp event_to_trigger(%TouchEvent{action: :move}), do: :touch_move
+  defp event_to_trigger(%TouchEvent{action: :end}), do: :touch_end
+
+  defp matches_condition?(nil, _entity_state), do: true
+  defp matches_condition?(true, _entity_state), do: true
+
+  defp matches_condition?(expr, entity_state) when is_binary(expr) do
+    Expression.eval_condition(expr, entity_state)
+  end
+
+  defp resolve_params(params, entity_state, event_context) do
+    Map.new(params, fn {key, value} ->
+      {key, resolve_param_value(value, entity_state, event_context)}
+    end)
+  end
+
+  defp resolve_param_value(value, entity_state, event_context) when is_binary(value) do
+    if String.contains?(value, "{{") do
+      Expression.resolve_with_context(value, entity_state, event_context)
+    else
+      value
+    end
+  end
+
+  defp resolve_param_value(%{} = map, entity_state, event_context) do
+    Map.new(map, fn {k, v} -> {k, resolve_param_value(v, entity_state, event_context)} end)
+  end
+
+  defp resolve_param_value(value, _entity_state, _event_context), do: value
+
+  defp build_event_context(%TouchEvent{x: x, y: y, touch_id: touch_id, control_id: control_id}) do
+    %{touch_x: x, touch_y: y, touch_id: touch_id, control_id: control_id}
+  end
+
+  defp build_event_context(_event), do: %{}
+
+  @doc """
+  Enrich event context with control dimensions for touch calculations.
+  Call this before match_input when the control spec is available.
+  """
+  @spec enrich_event_context(map(), Loupey.Device.Control.t() | nil) :: map()
+  def enrich_event_context(context, %{display: %{width: w, height: h}}) do
+    Map.merge(context, %{strip_width: w, strip_height: h, control_width: w, control_height: h})
+  end
+
+  def enrich_event_context(context, _control), do: context
+
+  defp resolve_instructions(instructions, entity_state) do
+    Map.new(instructions, fn
+      {:text, %{content: _} = text_opts} ->
+        {:text, Map.new(text_opts, fn {k, v} -> {k, Expression.resolve(v, entity_state)} end)}
+
+      {:text, text} when is_binary(text) ->
+        {:text, Expression.render(text, entity_state)}
+
+      {:fill, %{} = fill} ->
+        {:fill, Map.new(fill, fn {k, v} -> {k, Expression.resolve(v, entity_state)} end)}
+
+      {key, value} when is_binary(value) ->
+        {key, Expression.resolve(value, entity_state)}
+
+      {key, value} ->
+        {key, value}
+    end)
+  end
+end

@@ -1,0 +1,37 @@
+entity_id: "{{ entity_id }}"
+input_rules:
+  - on: touch_start
+    action: call_service
+    domain: light
+    service: turn_on
+    target: "{{ entity_id }}"
+    service_data:
+      brightness: "{{ round((1 - touch_y / strip_height) * 255) }}"
+  - on: touch_move
+    action: call_service
+    domain: light
+    service: turn_on
+    target: "{{ entity_id }}"
+    service_data:
+      brightness: "{{ round((1 - touch_y / strip_height) * 255) }}"
+output_rules:
+  - when: 'state == "on"'
+    background: "#0a0a0a"
+    fill:
+      amount: '{{ (attributes["brightness"] || 0) / 255 * 100 }}'
+      direction: to_top
+      color: "#FFD700"
+    text:
+      content: '{{ round((attributes["brightness"] || 0) / 255 * 100) }}%'
+      color: "#FFFFFF"
+      font_size: 12
+      orientation: vertical
+      valign: middle
+  - when: 'state == "off"'
+    background: "#0a0a0a"
+    text:
+      content: "OFF"
+      color: "#666666"
+      font_size: 12
+      orientation: vertical
+      valign: middle

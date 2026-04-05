@@ -45,9 +45,12 @@ defmodule Loupey.Graphics.Renderer do
 
     background_color = Map.get(instructions, :background, "#000000")
 
-    Image.new!(width, height, color: background_color)
-    |> apply_fill(instructions, width, height)
-    |> apply_icon(instructions, width, height)
+    {image, instructions} =
+      Image.new!(width, height, color: background_color)
+      |> apply_fill(instructions, width, height)
+      |> apply_icon(instructions, width, height)
+
+    image
     |> apply_text(instructions, width, height)
     |> Image.flatten!()
     |> Format.to_device_format(display.pixel_format)
@@ -67,45 +70,66 @@ defmodule Loupey.Graphics.Renderer do
 
   # -- Pipeline stages --
 
-  defp apply_fill(image, %{fill: fill}, width, height) do
+  defp apply_fill(image, %{fill: fill} = instructions, width, height) do
     amount = Map.get(fill, :amount, 100)
     direction = Map.get(fill, :direction, :to_top)
     color = Map.get(fill, :color, "#FFFFFF")
 
     {fill_w, fill_h, x, y} = fill_rect(direction, amount, width, height)
 
-    if fill_w > 0 and fill_h > 0 do
-      fill_image = Image.new!(fill_w, fill_h, color: color)
-      Image.compose!(image, fill_image, x: x, y: y)
-    else
-      image
-    end
+    image =
+      if fill_w > 0 and fill_h > 0 do
+        fill_image = Image.new!(fill_w, fill_h, color: color)
+        Image.compose!(image, fill_image, x: x, y: y)
+      else
+        image
+      end
+
+    {image, instructions}
   end
 
-  defp apply_fill(image, _instructions, _width, _height), do: image
+  defp apply_fill(image, instructions, _width, _height), do: {image, instructions}
 
-  defp apply_icon(image, %{icon: icon}, width, height) when not is_nil(icon) do
+  defp apply_icon({image, instructions}, %{icon: icon} = _orig, width, height)
+       when not is_nil(icon) do
+    apply_icon_impl(image, instructions, icon, width, height)
+  end
+
+  defp apply_icon({image, instructions}, _orig, _width, _height), do: {image, instructions}
+
+  defp apply_icon_impl(image, instructions, icon, width, height) do
     icon_w = Image.width(icon)
     icon_h = Image.height(icon)
+    has_text = Map.has_key?(instructions, :text)
+
     x = div(width - icon_w, 2)
-    y = div(height - icon_h, 2)
-    Image.compose!(image, icon, x: x, y: y)
+
+    y =
+      if has_text do
+        # Center icon in upper portion, leaving space for text below
+        text_space = round(height * 0.25)
+        div(height - text_space - icon_h, 2)
+      else
+        div(height - icon_h, 2)
+      end
+
+    instructions = Map.put(instructions, :_icon_bottom, y + icon_h)
+
+    {Image.compose!(image, icon, x: max(0, x), y: max(0, y)), instructions}
   end
 
-  defp apply_icon(image, _instructions, _width, _height), do: image
-
-  defp apply_text(image, %{text: text}, width, height) when is_binary(text) do
-    apply_text(image, %{text: %{content: text}}, width, height)
+  defp apply_text(image, %{text: text} = instructions, width, height) when is_binary(text) do
+    apply_text(image, %{instructions | text: %{content: text}}, width, height)
   end
 
-  defp apply_text(image, %{text: %{content: content} = opts}, width, height) do
+  defp apply_text(image, %{text: %{content: content} = opts} = instructions, width, height) do
     color = Map.get(opts, :color, "#FFFFFF")
     font_size = Map.get(opts, :font_size, 16)
 
     case Image.Text.text(content, text_fill_color: color, font_size: font_size) do
       {:ok, text_img} ->
         text_img = maybe_rotate(text_img, Map.get(opts, :orientation, :horizontal))
-        {x, y} = text_position(text_img, width, height, opts)
+        {x, y} = text_position(text_img, width, height, instructions, opts)
         Image.compose!(image, text_img, x: x, y: y)
 
       _ ->
@@ -118,12 +142,13 @@ defmodule Loupey.Graphics.Renderer do
   defp maybe_rotate(text_img, :vertical), do: Operation.rot!(text_img, :VIPS_ANGLE_D270)
   defp maybe_rotate(text_img, _), do: text_img
 
-  defp text_position(text_img, width, height, opts) do
+  defp text_position(text_img, width, height, instructions, opts) do
     text_w = Image.width(text_img)
     text_h = Image.height(text_img)
+    icon_bottom = Map.get(instructions, :_icon_bottom)
 
     x = align_x(Map.get(opts, :align, :center), width, text_w)
-    y = align_y(Map.get(opts, :valign, :middle), height, text_h)
+    y = align_y(Map.get(opts, :valign, :middle), height, text_h, icon_bottom)
 
     {max(0, min(x, width - 1)), max(0, min(y, height - 1))}
   end
@@ -132,9 +157,14 @@ defmodule Loupey.Graphics.Renderer do
   defp align_x(:right, width, text_w), do: width - text_w - 2
   defp align_x(_, width, text_w), do: div(width - text_w, 2)
 
-  defp align_y(:top, _height, _text_h), do: 2
-  defp align_y(:bottom, height, text_h), do: height - text_h - 2
-  defp align_y(_, height, text_h), do: div(height - text_h, 2)
+  # When icon is present and text is at bottom, place text right below icon
+  defp align_y(:bottom, _height, _text_h, icon_bottom) when is_integer(icon_bottom) do
+    icon_bottom + 2
+  end
+
+  defp align_y(:top, _height, _text_h, _icon_bottom), do: 2
+  defp align_y(:bottom, height, text_h, _icon_bottom), do: height - text_h - 2
+  defp align_y(_, height, text_h, _icon_bottom), do: div(height - text_h, 2)
 
   defp fill_rect(:to_top, amount, width, height) do
     fill_h = round(height * amount / 100)

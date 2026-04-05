@@ -1,1 +1,1 @@
-ExUnit.start(exclude: [:integration, :ha_integration])
+ExUnit.start(exclude: [:integration, :ha_integration, :bindings_integration])

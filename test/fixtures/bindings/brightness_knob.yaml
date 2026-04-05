@@ -1,0 +1,22 @@
+entity_id: "{{ entity_id }}"
+input_rules:
+  - on: rotate_cw
+    action: call_service
+    domain: light
+    service: turn_on
+    target: "{{ entity_id }}"
+    service_data:
+      brightness_step: 25
+  - on: rotate_ccw
+    action: call_service
+    domain: light
+    service: turn_on
+    target: "{{ entity_id }}"
+    service_data:
+      brightness_step: -25
+  - on: press
+    action: call_service
+    domain: light
+    service: toggle
+    target: "{{ entity_id }}"
+output_rules: []
