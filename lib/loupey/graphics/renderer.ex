@@ -18,8 +18,15 @@ defmodule Loupey.Graphics.Renderer do
   - `:background` — `"#RRGGBB"` solid color (default: `"#000000"`)
   - `:icon` — `Vix.Vips.Image.t()` already loaded icon image
   - `:fill` — `%{amount: 0..100, direction: :to_top | :to_bottom | :to_left | :to_right, color: "#RRGGBB"}`
+  - `:text` — text rendering, either a simple string or a map with:
+    - `:content` — the text string (required)
+    - `:color` — text color (default: `"#FFFFFF"`)
+    - `:font_size` — size in pixels (default: `16`)
+    - `:align` — `:left`, `:center` (default), `:right`
+    - `:valign` — `:top`, `:middle` (default), `:bottom`
+    - `:orientation` — `:horizontal` (default) or `:vertical`
 
-  Text and gradient support will be added in later milestones.
+  Gradient support will be added in later milestones.
   """
 
   alias Loupey.Device.Control
@@ -40,6 +47,7 @@ defmodule Loupey.Graphics.Renderer do
     Image.new!(width, height, color: background_color)
     |> apply_fill(instructions, width, height)
     |> apply_icon(instructions, width, height)
+    |> apply_text(instructions, width, height)
     |> Image.flatten!()
     |> Format.to_device_format(display.pixel_format)
   end
@@ -84,6 +92,57 @@ defmodule Loupey.Graphics.Renderer do
   end
 
   defp apply_icon(image, _instructions, _width, _height), do: image
+
+  # Text: simple string shorthand
+  defp apply_text(image, %{text: text}, width, height) when is_binary(text) do
+    apply_text(image, %{text: %{content: text}}, width, height)
+  end
+
+  # Text: full map with options
+  defp apply_text(image, %{text: %{content: content} = opts}, width, height) do
+    color = Map.get(opts, :color, "#FFFFFF")
+    font_size = Map.get(opts, :font_size, 16)
+    align = Map.get(opts, :align, :center)
+    valign = Map.get(opts, :valign, :middle)
+    orientation = Map.get(opts, :orientation, :horizontal)
+
+    case Image.Text.text(content, text_fill_color: color, font_size: font_size) do
+      {:ok, text_img} ->
+        text_img =
+          case orientation do
+            :vertical -> Vix.Vips.Operation.rot!(text_img, :VIPS_ANGLE_D270)
+            _ -> text_img
+          end
+
+        text_w = Image.width(text_img)
+        text_h = Image.height(text_img)
+
+        x =
+          case align do
+            :left -> 2
+            :right -> width - text_w - 2
+            _ -> div(width - text_w, 2)
+          end
+
+        y =
+          case valign do
+            :top -> 2
+            :bottom -> height - text_h - 2
+            _ -> div(height - text_h, 2)
+          end
+
+        # Clamp to bounds
+        x = max(0, min(x, width - 1))
+        y = max(0, min(y, height - 1))
+
+        Image.compose!(image, text_img, x: x, y: y)
+
+      _ ->
+        image
+    end
+  end
+
+  defp apply_text(image, _instructions, _width, _height), do: image
 
   defp fill_rect(:to_top, amount, width, height) do
     fill_h = round(height * amount / 100)

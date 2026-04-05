@@ -24,7 +24,9 @@ defmodule Loupey.MixProject do
     [
       {:circuits_uart, "~> 1.5"},
       {:image, "~> 0.55.2"},
-      {:typed_struct, "~> 0.3.0"}
+      {:typed_struct, "~> 0.3.0"},
+      {:websockex, "~> 0.4.3"},
+      {:jason, "~> 1.4"}
     ]
   end
 end

@@ -15,6 +15,8 @@ defmodule Loupey.Application do
       {Registry, keys: :unique, name: Loupey.DeviceRegistry},
       # Registry for pub/sub event dispatch (duplicate keys — multiple subscribers per device)
       {Registry, keys: :duplicate, name: Loupey.EventRegistry},
+      # Registry for HA state change pub/sub (duplicate keys — multiple subscribers per entity)
+      {Registry, keys: :duplicate, name: Loupey.HAEventRegistry},
       # DynamicSupervisor for device connections
       {DynamicSupervisor, name: Loupey.DeviceSupervisor, strategy: :one_for_one}
     ]
