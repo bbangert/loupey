@@ -15,6 +15,7 @@ defmodule LoupeyWeb.Router do
 
     live "/", DashboardLive, :index
     live "/profiles", ProfilesLive, :index
+    live "/profiles/:id", ProfileEditorLive, :edit
     live "/settings", SettingsLive, :index
   end
 
