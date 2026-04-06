@@ -24,3 +24,14 @@ loupey-*.tar
 
 # Temporary files, for example, from tests.
 /tmp/
+
+# SQLite database files
+*.db
+*.db-shm
+*.db-wal
+
+# Phoenix static assets (built by esbuild/tailwind)
+/priv/static/assets/
+
+# Node modules (if any)
+/assets/node_modules/

@@ -36,7 +36,7 @@ defmodule Loupey.HA.IntegrationTest do
       {:ok, _pid} = HA.connect(config)
 
       # Wait for initial state load
-      {:ok, _} = StateCache.subscribe_connected()
+      :ok = StateCache.subscribe_connected()
 
       receive do
         :ha_connected -> :ok
@@ -105,7 +105,7 @@ defmodule Loupey.HA.IntegrationTest do
       if is_nil(target) do
         IO.puts("\n  No lights found — set HA_LIGHT_ENTITY or add a light to HA")
       else
-        {:ok, _} = HA.subscribe(target.entity_id)
+        :ok = HA.subscribe(target.entity_id)
 
         IO.puts("\n  Toggling #{target.entity_id} (currently #{target.state})...")
 
@@ -146,7 +146,7 @@ defmodule Loupey.HA.IntegrationTest do
         target = hd(switches)
         IO.puts("\n  Toggling input_boolean: #{target.entity_id}")
 
-        {:ok, _} = HA.subscribe(target.entity_id)
+        :ok = HA.subscribe(target.entity_id)
 
         HA.call_service(%ServiceCall{
           domain: "input_boolean",

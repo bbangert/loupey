@@ -57,7 +57,7 @@ defmodule Loupey.Bindings.IntegrationTest do
         spec = DeviceServer.get_spec(device_id)
 
         {:ok, _} = HA.connect(%Config{url: url, token: token})
-        {:ok, _} = StateCache.subscribe_connected()
+        :ok = StateCache.subscribe_connected()
 
         receive do
           :ha_connected -> :ok
@@ -133,7 +133,7 @@ defmodule Loupey.Bindings.IntegrationTest do
     {:ok, _engine} = Engine.start_link(device_id: device_id, profile: profile)
 
     # Subscribe to device events for exit detection
-    {:ok, _} = Devices.subscribe(device_id)
+    :ok = Devices.subscribe(device_id)
 
     # Show hints on spare keys
     render_hints(device_id, spec, keys, light_entity, left_strip != nil)

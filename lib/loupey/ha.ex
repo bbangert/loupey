@@ -72,7 +72,7 @@ defmodule Loupey.HA do
   Subscribe to state changes for a specific entity.
   Events arrive as `{:ha_state_changed, entity_id, new_state, old_state}`.
   """
-  @spec subscribe(String.t()) :: {:ok, pid()} | {:error, term()}
+  @spec subscribe(String.t()) :: :ok | {:error, term()}
   def subscribe(entity_id) do
     StateCache.subscribe(entity_id)
   end
@@ -80,7 +80,7 @@ defmodule Loupey.HA do
   @doc """
   Subscribe to all entity state changes.
   """
-  @spec subscribe_all() :: {:ok, pid()} | {:error, term()}
+  @spec subscribe_all() :: :ok | {:error, term()}
   def subscribe_all do
     StateCache.subscribe_all()
   end

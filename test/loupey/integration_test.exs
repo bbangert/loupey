@@ -47,7 +47,7 @@ defmodule Loupey.IntegrationTest do
     if context[:skip] do
       :ignore
     else
-      {:ok, _} = Devices.subscribe(device_id)
+      :ok = Devices.subscribe(device_id)
 
       on_exit(fn ->
         clear_all_displays(device_id, spec)

@@ -198,8 +198,6 @@ defmodule Loupey.DeviceServer do
   end
 
   defp broadcast_event(device_id, event) do
-    Registry.dispatch(Loupey.EventRegistry, device_id, fn entries ->
-      for {pid, _value} <- entries, do: send(pid, {:device_event, device_id, event})
-    end)
+    Phoenix.PubSub.broadcast(Loupey.PubSub, "device:#{device_id}", {:device_event, device_id, event})
   end
 end

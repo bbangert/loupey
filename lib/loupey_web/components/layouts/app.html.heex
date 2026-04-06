@@ -1,0 +1,16 @@
+<header class="bg-gray-800 border-b border-gray-700">
+  <nav class="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+    <div class="flex h-14 items-center justify-between">
+      <div class="flex items-center gap-6">
+        <a href="/" class="text-lg font-bold text-white">Loupey</a>
+        <a href="/" class="text-sm text-gray-300 hover:text-white">Dashboard</a>
+        <a href="/profiles" class="text-sm text-gray-300 hover:text-white">Profiles</a>
+        <a href="/settings" class="text-sm text-gray-300 hover:text-white">Settings</a>
+      </div>
+    </div>
+  </nav>
+</header>
+<main class="mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8">
+  <.flash_group flash={@flash} />
+  {@inner_content}
+</main>

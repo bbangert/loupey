@@ -60,8 +60,8 @@ defmodule Loupey.Devices do
 
   Events are delivered as `{:device_event, device_id, event}` messages.
   """
-  @spec subscribe(term()) :: {:ok, pid()} | {:error, term()}
+  @spec subscribe(term()) :: :ok | {:error, term()}
   def subscribe(device_id) do
-    Registry.register(Loupey.EventRegistry, device_id, [])
+    Phoenix.PubSub.subscribe(Loupey.PubSub, "device:#{device_id}")
   end
 end

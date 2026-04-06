@@ -6,11 +6,11 @@ defmodule Loupey.HA.StateCache do
   lookup, and broadcasts meaningful changes via Registry so the binding
   engine can react.
 
-  ## PubSub Topics (via Loupey.HAEventRegistry)
+  ## PubSub Topics (via Loupey.PubSub / Phoenix.PubSub)
 
-  - `{:ha_state, entity_id}` — state changed for a specific entity
-  - `:ha_state_all` — any entity state changed
-  - `:ha_connected` — initial state load complete (HA is ready)
+  - `"ha:state:{entity_id}"` — state changed for a specific entity
+  - `"ha:state:all"` — any entity state changed
+  - `"ha:connected"` — initial state load complete (HA is ready)
   """
 
   use GenServer
@@ -66,26 +66,26 @@ defmodule Loupey.HA.StateCache do
   Subscribe the calling process to state changes for a specific entity.
   Events arrive as `{:ha_state_changed, entity_id, new_state, old_state}`.
   """
-  @spec subscribe(String.t()) :: {:ok, pid()} | {:error, term()}
+  @spec subscribe(String.t()) :: :ok | {:error, term()}
   def subscribe(entity_id) do
-    Registry.register(Loupey.HAEventRegistry, {:ha_state, entity_id}, [])
+    Phoenix.PubSub.subscribe(Loupey.PubSub, "ha:state:#{entity_id}")
   end
 
   @doc """
   Subscribe the calling process to all state changes.
   """
-  @spec subscribe_all() :: {:ok, pid()} | {:error, term()}
+  @spec subscribe_all() :: :ok | {:error, term()}
   def subscribe_all do
-    Registry.register(Loupey.HAEventRegistry, :ha_state_all, [])
+    Phoenix.PubSub.subscribe(Loupey.PubSub, "ha:state:all")
   end
 
   @doc """
   Subscribe to the connection-ready signal.
   Fires once after initial state load.
   """
-  @spec subscribe_connected() :: {:ok, pid()} | {:error, term()}
+  @spec subscribe_connected() :: :ok | {:error, term()}
   def subscribe_connected do
-    Registry.register(Loupey.HAEventRegistry, :ha_connected, [])
+    Phoenix.PubSub.subscribe(Loupey.PubSub, "ha:connected")
   end
 
   @doc """
@@ -116,7 +116,7 @@ defmodule Loupey.HA.StateCache do
 
     Logger.info("HA StateCache: loaded #{length(states)} entities")
 
-    broadcast(:ha_connected, :ha_connected)
+    broadcast("ha:connected", :ha_connected)
 
     {:noreply, state}
   end
@@ -128,11 +128,9 @@ defmodule Loupey.HA.StateCache do
     if Messages.state_changed?(old, new_state) do
       :ets.insert(@table, {new_state.entity_id, new_state})
 
-      broadcast({:ha_state, new_state.entity_id},
-        {:ha_state_changed, new_state.entity_id, new_state, old})
-
-      broadcast(:ha_state_all,
-        {:ha_state_changed, new_state.entity_id, new_state, old})
+      msg = {:ha_state_changed, new_state.entity_id, new_state, old}
+      broadcast("ha:state:#{new_state.entity_id}", msg)
+      broadcast("ha:state:all", msg)
     end
 
     {:noreply, state}
@@ -144,9 +142,7 @@ defmodule Loupey.HA.StateCache do
 
   # -- Internals --
 
-  defp broadcast(key, message) do
-    Registry.dispatch(Loupey.HAEventRegistry, key, fn entries ->
-      for {pid, _value} <- entries, do: send(pid, message)
-    end)
+  defp broadcast(topic, message) do
+    Phoenix.PubSub.broadcast(Loupey.PubSub, topic, message)
   end
 end
