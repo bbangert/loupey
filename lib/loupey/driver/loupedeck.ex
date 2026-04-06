@@ -10,6 +10,7 @@ defmodule Loupey.Driver.Loupedeck do
 
   alias Loupey.Device.{Spec, Variant}
   alias Loupey.Events.{PressEvent, RotateEvent, TouchEvent}
+  alias Loupey.Graphics.Color
   alias Loupey.RenderCommands.{DrawBuffer, SetBrightness, SetLED}
 
   @ws_upgrade_header "GET /index.html\nHTTP/1.1\nConnection: Upgrade\nUpgrade: websocket\nSec-WebSocket-Key: 123abc\n\n"
@@ -113,7 +114,7 @@ defmodule Loupey.Driver.Loupedeck do
            _ <- drain_uart(uart_pid),
            :ok <-
              Circuits.UART.configure(uart_pid,
-               framing: {Loupey.Framing.Websocket, []},
+               framing: {Loupey.Driver.Loupedeck.Framing, []},
                active: true
              ) do
         {:ok, %ConnectionState{uart_pid: uart_pid, tty: tty}}
@@ -217,7 +218,7 @@ defmodule Loupey.Driver.Loupedeck do
 
   def encode(%SetLED{control_id: control_id, color: color}) do
     hw_id = Map.fetch!(@control_to_hw, control_id)
-    [r, g, b] = Loupey.Color.parse_color(color)
+    [r, g, b] = Color.parse(color)
     {@commands.set_color, <<hw_id, r, g, b>>}
   end
 

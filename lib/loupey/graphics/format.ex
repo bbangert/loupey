@@ -6,6 +6,7 @@ defmodule Loupey.Graphics.Format do
   This module converts a `Vix.Vips.Image` into the appropriate binary format.
   """
 
+  alias Loupey.Graphics.Color
   alias Vix.Vips
 
   @doc """
@@ -18,7 +19,6 @@ defmodule Loupey.Graphics.Format do
 
   @doc """
   Convert a Vix image to RGB565 little-endian binary.
-  Generalizes the existing `Loupey.Graphics.Image.image_to_rgb565_binary!/1`.
   """
   @spec to_rgb565(Vips.Image.t()) :: binary()
   def to_rgb565(image) do
@@ -26,8 +26,7 @@ defmodule Loupey.Graphics.Format do
     |> Image.flatten!()
     |> Vips.Image.write_to_binary()
     |> elem(1)
-    |> Loupey.Color.rgb_to_rgb565()
-    |> IO.iodata_to_binary()
+    |> Color.rgb_binary_to_rgb565()
   end
 
   @doc """
