@@ -214,6 +214,10 @@ defmodule Loupey.Bindings.Engine do
   end
 
   defp do_switch_layout(state, layout_id) do
+    # Clear all controls first
+    clear_commands = LayoutEngine.clear_all(state.spec)
+    send_commands(state.device_id, clear_commands, state.spec)
+
     {profile, commands} =
       LayoutEngine.switch_layout(state.profile, layout_id, state.entity_states, state.spec)
 

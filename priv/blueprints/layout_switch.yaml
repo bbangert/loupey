@@ -1,0 +1,28 @@
+name: "Layout Switch"
+description: "Button/key that switches to a different layout"
+inputs:
+  layout:
+    type: string
+    description: "Name of the layout to switch to"
+  label:
+    type: string
+    default: ""
+    description: "Text label to display"
+  color:
+    type: color
+    default: "#2244AA"
+    description: "Background color"
+input_rules:
+  - on: touch_start
+    action: switch_layout
+    layout: "{{ inputs.layout }}"
+  - on: press
+    action: switch_layout
+    layout: "{{ inputs.layout }}"
+output_rules:
+  - when: true
+    background: "{{ inputs.color }}"
+    text:
+      content: "{{ inputs.label }}"
+      color: "#FFFFFF"
+      font_size: 14

@@ -1,0 +1,24 @@
+name: "Volume Knob"
+description: "Knob that adjusts media player volume and mutes on press"
+inputs:
+  entity:
+    type: entity
+    domain: media_player
+    description: "The media player to control"
+input_rules:
+  - on: rotate_cw
+    action: call_service
+    domain: media_player
+    service: volume_up
+    target: "{{ inputs.entity }}"
+  - on: rotate_ccw
+    action: call_service
+    domain: media_player
+    service: volume_down
+    target: "{{ inputs.entity }}"
+  - on: press
+    action: call_service
+    domain: media_player
+    service: media_play_pause
+    target: "{{ inputs.entity }}"
+output_rules: []

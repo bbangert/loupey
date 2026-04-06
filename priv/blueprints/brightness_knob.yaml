@@ -1,0 +1,32 @@
+name: "Brightness Knob"
+description: "Knob that adjusts brightness (rotate) and toggles (press)"
+inputs:
+  entity:
+    type: entity
+    domain: light
+    description: "The light to control"
+  step:
+    type: number
+    default: 25
+    description: "Brightness step per rotation click (0-255)"
+input_rules:
+  - on: rotate_cw
+    action: call_service
+    domain: light
+    service: turn_on
+    target: "{{ inputs.entity }}"
+    service_data:
+      brightness_step: "{{ inputs.step }}"
+  - on: rotate_ccw
+    action: call_service
+    domain: light
+    service: turn_on
+    target: "{{ inputs.entity }}"
+    service_data:
+      brightness_step: "-{{ inputs.step }}"
+  - on: press
+    action: call_service
+    domain: light
+    service: toggle
+    target: "{{ inputs.entity }}"
+output_rules: []

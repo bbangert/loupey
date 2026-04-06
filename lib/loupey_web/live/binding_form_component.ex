@@ -154,6 +154,18 @@ defmodule LoupeyWeb.BindingFormComponent do
               />
             </div>
           </div>
+          <%!-- Service data --%>
+          <div :if={rule.action == "call_service"}>
+            <label class="text-[10px] text-gray-500">Service Data (YAML, optional)</label>
+            <textarea
+              phx-change="update_input_rule" phx-debounce="300"
+              phx-target={@myself}
+              name={"input_rule[#{idx}][service_data]"}
+              rows="2"
+              placeholder={"brightness: 128\ncolor_temp: 400"}
+              class="w-full bg-gray-700 border border-gray-600 rounded px-1.5 py-1 text-xs text-white font-mono resize-y"
+            >{format_service_data(rule[:service_data])}</textarea>
+          </div>
           <%!-- Condition --%>
           <div>
             <label class="text-[10px] text-gray-500">Condition (optional)</label>
@@ -330,14 +342,13 @@ defmodule LoupeyWeb.BindingFormComponent do
           <div class="grid grid-cols-4 gap-2">
             <div class="col-span-2">
               <label class="text-[10px] text-gray-500">Text</label>
-              <input
-                type="text"
+              <textarea
                 name="text_content"
-                value={get_text_content(rule[:text]) || ""}
+                rows="2"
                 phx-debounce="300"
                 placeholder="ON or {{ state }}°F"
-                class="w-full bg-gray-700 border border-gray-600 rounded px-1.5 py-1 text-xs text-white font-mono"
-              />
+                class="w-full bg-gray-700 border border-gray-600 rounded px-1.5 py-1 text-xs text-white font-mono resize-y"
+              >{get_text_content(rule[:text]) || ""}</textarea>
             </div>
             <div>
               <label class="text-[10px] text-gray-500">Text color</label>
@@ -402,6 +413,10 @@ defmodule LoupeyWeb.BindingFormComponent do
     form_data = socket.assigns.form_data
 
     case extract_rule_param(params, "input_rule") do
+      {:ok, idx, :service_data, value} ->
+        rules = List.update_at(form_data.input_rules, idx, &Map.put(&1, :service_data, parse_service_data(value)))
+        {:noreply, assign(socket, form_data: %{form_data | input_rules: rules})}
+
       {:ok, idx, field, value} ->
         rules = List.update_at(form_data.input_rules, idx, &Map.put(&1, field, value))
         {:noreply, assign(socket, form_data: %{form_data | input_rules: rules})}
@@ -430,56 +445,6 @@ defmodule LoupeyWeb.BindingFormComponent do
     rules = List.update_at(form_data.output_rules, idx, &update_output_rule(&1, params))
     {:noreply, assign(socket, form_data: %{form_data | output_rules: rules})}
   end
-
-  defp update_output_rule(rule, params) do
-    rule
-    |> put_if_present(:when, parse_when_value(params["when"]))
-    |> put_if_present(:background, params["background"])
-    |> put_if_present(:color, params["color"])
-    |> put_if_present(:icon, params["icon"])
-    |> update_fill(params)
-    |> update_text(params)
-  end
-
-  defp update_fill(rule, params) do
-    amount = params["fill_amount"]
-    dir = params["fill_direction"]
-    color = params["fill_color"]
-
-    if (amount && amount != "") or (dir && dir != "") do
-      fill = %{}
-      fill = if amount != "", do: Map.put(fill, :amount, amount), else: fill
-      fill = if dir != "", do: Map.put(fill, :direction, dir), else: fill
-      fill = if color, do: Map.put(fill, :color, color), else: fill
-      Map.put(rule, :fill, fill)
-    else
-      Map.delete(rule, :fill)
-    end
-  end
-
-  defp update_text(rule, params) do
-    content = params["text_content"]
-    valign = params["text_valign"]
-    color = params["text_color"]
-
-    if content && content != "" do
-      text = %{content: content}
-      text = if valign && valign != "", do: Map.put(text, :valign, valign), else: text
-      text = if color && color != "", do: Map.put(text, :color, color), else: text
-      Map.put(rule, :text, text)
-    else
-      Map.delete(rule, :text)
-    end
-  end
-
-  defp put_if_present(rule, _key, nil), do: rule
-  defp put_if_present(rule, _key, ""), do: rule
-  defp put_if_present(rule, key, value), do: Map.put(rule, key, value)
-
-  defp parse_when_value(nil), do: nil
-  defp parse_when_value("true"), do: true
-  defp parse_when_value(""), do: true
-  defp parse_when_value(expr), do: expr
 
   def handle_event("toggle_icon_browser", %{"idx" => idx_str}, socket) do
     idx = String.to_integer(idx_str)
@@ -531,6 +496,58 @@ defmodule LoupeyWeb.BindingFormComponent do
     {:noreply, socket}
   end
 
+  # -- Output form helpers --
+
+  defp update_output_rule(rule, params) do
+    rule
+    |> put_if_present(:when, parse_when_value(params["when"]))
+    |> put_if_present(:background, params["background"])
+    |> put_if_present(:color, params["color"])
+    |> put_if_present(:icon, params["icon"])
+    |> update_fill(params)
+    |> update_text(params)
+  end
+
+  defp update_fill(rule, params) do
+    amount = params["fill_amount"]
+    dir = params["fill_direction"]
+    color = params["fill_color"]
+
+    if (amount && amount != "") or (dir && dir != "") do
+      fill = %{}
+      fill = if amount != "", do: Map.put(fill, :amount, amount), else: fill
+      fill = if dir != "", do: Map.put(fill, :direction, dir), else: fill
+      fill = if color, do: Map.put(fill, :color, color), else: fill
+      Map.put(rule, :fill, fill)
+    else
+      Map.delete(rule, :fill)
+    end
+  end
+
+  defp update_text(rule, params) do
+    content = params["text_content"]
+    valign = params["text_valign"]
+    color = params["text_color"]
+
+    if content && content != "" do
+      text = %{content: content}
+      text = if valign && valign != "", do: Map.put(text, :valign, valign), else: text
+      text = if color && color != "", do: Map.put(text, :color, color), else: text
+      Map.put(rule, :text, text)
+    else
+      Map.delete(rule, :text)
+    end
+  end
+
+  defp put_if_present(rule, _key, nil), do: rule
+  defp put_if_present(rule, _key, ""), do: rule
+  defp put_if_present(rule, key, value), do: Map.put(rule, key, value)
+
+  defp parse_when_value(nil), do: nil
+  defp parse_when_value("true"), do: true
+  defp parse_when_value(""), do: true
+  defp parse_when_value(expr), do: expr
+
   # -- YAML generation --
 
   defp form_to_yaml(form_data, entity_id) do
@@ -562,7 +579,8 @@ defmodule LoupeyWeb.BindingFormComponent do
   defp input_action_yaml(%{action: "call_service"} = rule, entity_id) do
     if_present("    domain: ", rule[:domain]) ++
       if_present("    service: ", rule[:service]) ++
-      if(entity_id && entity_id != "", do: ["    target: \"#{entity_id}\""], else: [])
+      if(entity_id && entity_id != "", do: ["    target: \"#{entity_id}\""], else: []) ++
+      service_data_to_yaml(rule[:service_data])
   end
 
   defp input_action_yaml(%{action: "switch_layout"} = rule, _entity_id) do
@@ -572,6 +590,19 @@ defmodule LoupeyWeb.BindingFormComponent do
   end
 
   defp input_action_yaml(_rule, _entity_id), do: []
+
+  defp service_data_to_yaml(nil), do: []
+  defp service_data_to_yaml(data) when data == %{}, do: []
+
+  defp service_data_to_yaml(data) when is_map(data) do
+    lines = Enum.flat_map(data, fn {k, v} ->
+      str = to_string(v)
+      val = if String.starts_with?(str, "{{") or String.starts_with?(str, "#"), do: "\"#{str}\"", else: str
+      ["      #{k}: #{val}"]
+    end)
+
+    if lines != [], do: ["    service_data:"] ++ lines, else: []
+  end
 
   defp output_rules_to_yaml([]), do: ["  []"]
 
@@ -598,7 +629,8 @@ defmodule LoupeyWeb.BindingFormComponent do
   defp fill_to_yaml(_), do: []
 
   defp text_to_yaml(%{content: content} = text) when is_binary(content) and content != "" do
-    ["    text:", "      content: \"#{content}\""] ++
+    escaped = content |> String.replace("\\", "\\\\") |> String.replace("\n", "\\n")
+    ["    text:", "      content: \"#{escaped}\""] ++
       if_present("      valign: ", text[:valign]) ++
       if_present("      font_size: ", text[:font_size]) ++
       if_present("      color: ", text[:color])
@@ -650,7 +682,7 @@ defmodule LoupeyWeb.BindingFormComponent do
 
   defp parse_form_input_rules(rules) do
     Enum.map(rules, fn rule ->
-      %{
+      base = %{
         on: rule["on"] || "press",
         action: rule["action"] || "call_service",
         domain: rule["domain"] || "",
@@ -658,7 +690,15 @@ defmodule LoupeyWeb.BindingFormComponent do
         when: rule["when"],
         layout: rule["layout"]
       }
+
+      if is_map(rule["service_data"]) and rule["service_data"] != %{},
+        do: Map.put(base, :service_data, stringify_keys(rule["service_data"])),
+        else: base
     end)
+  end
+
+  defp stringify_keys(map) when is_map(map) do
+    Map.new(map, fn {k, v} -> {to_string(k), to_string(v)} end)
   end
 
   defp parse_form_output_rules(rules) do
@@ -726,6 +766,40 @@ defmodule LoupeyWeb.BindingFormComponent do
 
   defp get_text_valign(%{valign: v}), do: v
   defp get_text_valign(_), do: "bottom"
+
+  defp parse_service_data(text) when is_binary(text) do
+    text
+    |> String.split("\n")
+    |> Enum.reject(&(String.trim(&1) == ""))
+    |> Map.new(fn line ->
+      case String.split(line, ":", parts: 2) do
+        [key, value] -> {String.trim(key), String.trim(value) |> String.trim("\"")}
+        _ -> {"", ""}
+      end
+    end)
+    |> Map.delete("")
+  end
+
+  defp parse_service_data(_), do: %{}
+
+  defp format_service_data(nil), do: ""
+  defp format_service_data(data) when data == %{}, do: ""
+
+  defp format_service_data(data) when is_map(data) do
+    data
+    |> Enum.map(fn {k, v} -> "#{k}: #{format_sd_value(v)}" end)
+    |> Enum.join("\n")
+  end
+
+  defp format_service_data(_), do: ""
+
+  defp format_sd_value(v) when is_binary(v) and byte_size(v) > 0 do
+    if String.starts_with?(v, "{{") or String.starts_with?(v, "#"),
+      do: "\"#{v}\"",
+      else: v
+  end
+
+  defp format_sd_value(v), do: inspect(v)
 
   defp get_text_color(%{color: c}) when not is_nil(c), do: c
   defp get_text_color(_), do: "#ffffff"

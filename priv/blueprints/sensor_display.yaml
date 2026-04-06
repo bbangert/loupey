@@ -1,0 +1,23 @@
+name: "Sensor Display"
+description: "Display key showing a sensor value (temperature, humidity, etc.)"
+inputs:
+  entity:
+    type: entity
+    domain: sensor
+    description: "The sensor to display"
+  unit:
+    type: string
+    default: ""
+    description: "Unit suffix (e.g. °F, %, lux)"
+  color:
+    type: color
+    default: "#44AAFF"
+    description: "Text color"
+input_rules: []
+output_rules:
+  - when: true
+    background: "#111111"
+    text:
+      content: '{{ state }}{{ inputs.unit }}'
+      color: "{{ inputs.color }}"
+      font_size: 20

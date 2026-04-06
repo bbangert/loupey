@@ -1,0 +1,34 @@
+name: "Switch Toggle"
+description: "Display key that shows switch state and toggles on touch"
+inputs:
+  entity:
+    type: entity
+    domain: switch
+    description: "The switch to control"
+  on_color:
+    type: color
+    default: "#44FF44"
+    description: "Background color when on"
+  off_color:
+    type: color
+    default: "#333333"
+    description: "Background color when off"
+input_rules:
+  - on: touch_start
+    action: call_service
+    domain: switch
+    service: toggle
+    target: "{{ inputs.entity }}"
+output_rules:
+  - when: 'state == "on"'
+    background: "{{ inputs.on_color }}"
+    text:
+      content: "ON"
+      color: "#FFFFFF"
+      font_size: 20
+  - when: 'state == "off"'
+    background: "{{ inputs.off_color }}"
+    text:
+      content: "OFF"
+      color: "#888888"
+      font_size: 20

@@ -1,0 +1,45 @@
+name: "Media Play/Pause"
+description: "Display key that shows media state and toggles play/pause"
+inputs:
+  entity:
+    type: entity
+    domain: media_player
+    description: "The media player to control"
+input_rules:
+  - on: touch_start
+    when: 'state == "playing"'
+    action: call_service
+    domain: media_player
+    service: media_pause
+    target: "{{ inputs.entity }}"
+  - on: touch_start
+    when: 'state != "playing"'
+    action: call_service
+    domain: media_player
+    service: media_play
+    target: "{{ inputs.entity }}"
+output_rules:
+  - when: 'state == "playing"'
+    background: "#1a2e1a"
+    icon: "icons/neon_blue/Pause.png"
+    text:
+      content: '{{ attributes["media_title"] || "Playing" }}'
+      color: "#44FF44"
+      font_size: 11
+      valign: bottom
+  - when: 'state == "paused"'
+    background: "#2e2e1a"
+    icon: "icons/neon_blue/Play.png"
+    text:
+      content: "Paused"
+      color: "#FFAA44"
+      font_size: 14
+      valign: bottom
+  - when: true
+    background: "#1a1a1a"
+    icon: "icons/neon_blue/Stop.png"
+    text:
+      content: '{{ state }}'
+      color: "#888888"
+      font_size: 14
+      valign: bottom

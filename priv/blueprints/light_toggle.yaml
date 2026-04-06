@@ -1,0 +1,46 @@
+name: "Light Toggle"
+description: "Display key that shows light state and toggles on touch"
+inputs:
+  entity:
+    type: entity
+    domain: light
+    description: "The light to control"
+  on_icon:
+    type: icon
+    default: "icons/neon_blue/Lights_On.png"
+    description: "Icon when light is on"
+  off_icon:
+    type: icon
+    default: "icons/neon_blue/Lights_Off.png"
+    description: "Icon when light is off"
+  on_color:
+    type: color
+    default: "#FFD700"
+    description: "Background color when on"
+  off_color:
+    type: color
+    default: "#333333"
+    description: "Background color when off"
+input_rules:
+  - on: touch_start
+    action: call_service
+    domain: light
+    service: toggle
+    target: "{{ inputs.entity }}"
+output_rules:
+  - when: 'state == "on"'
+    background: "{{ inputs.on_color }}"
+    icon: "{{ inputs.on_icon }}"
+    text:
+      content: "ON"
+      color: "#44FF44"
+      font_size: 16
+      valign: bottom
+  - when: 'state == "off"'
+    background: "{{ inputs.off_color }}"
+    icon: "{{ inputs.off_icon }}"
+    text:
+      content: "OFF"
+      color: "#FF4444"
+      font_size: 16
+      valign: bottom
