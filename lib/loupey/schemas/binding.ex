@@ -8,6 +8,7 @@ defmodule Loupey.Schemas.Binding do
   use Ecto.Schema
   import Ecto.Changeset
 
+  alias Loupey.Bindings.YamlParser
   alias Loupey.Schemas.Layout
 
   schema "bindings" do
@@ -30,7 +31,7 @@ defmodule Loupey.Schemas.Binding do
   Parse the YAML field into a core Binding struct.
   """
   def to_core(%__MODULE__{yaml: yaml, entity_id: entity_id}) do
-    case Loupey.Bindings.YamlParser.parse_binding(yaml) do
+    case YamlParser.parse_binding(yaml) do
       {:ok, binding} -> {:ok, %{binding | entity_id: entity_id || binding.entity_id}}
       error -> error
     end

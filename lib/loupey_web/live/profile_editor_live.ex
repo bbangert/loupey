@@ -1,6 +1,7 @@
 defmodule LoupeyWeb.ProfileEditorLive do
   use LoupeyWeb, :live_view
 
+  alias Loupey.Driver.Loupedeck, as: LoupedeckDriver
   alias Loupey.Profiles
   alias Loupey.Schemas.Binding
 
@@ -429,8 +430,6 @@ defmodule LoupeyWeb.ProfileEditorLive do
     end
 
     bindings = layout_bindings(layout)
-    require Logger
-    Logger.debug("select_layout: #{layout.name} (id: #{layout.id}), bindings: #{inspect(Map.keys(bindings))}, count: #{map_size(bindings)}")
 
     {:noreply,
      assign(socket,
@@ -629,15 +628,13 @@ defmodule LoupeyWeb.ProfileEditorLive do
   # -- Helpers --
 
   defp search_entities(query) do
-    try do
-      Loupey.HA.get_all_states()
-      |> Enum.map(& &1.entity_id)
-      |> Enum.filter(&String.contains?(&1, query))
-      |> Enum.sort()
-      |> Enum.take(20)
-    rescue
-      _ -> []
-    end
+    Loupey.HA.get_all_states()
+    |> Enum.map(& &1.entity_id)
+    |> Enum.filter(&String.contains?(&1, query))
+    |> Enum.sort()
+    |> Enum.take(20)
+  rescue
+    _ -> []
   end
 
   defp update_yaml_entity(yaml, entity_id) do
@@ -690,7 +687,7 @@ defmodule LoupeyWeb.ProfileEditorLive do
 
       [] ->
         # Fallback to Loupedeck Live spec
-        Loupey.Device.Variant.Live.device_spec()
+        LoupedeckDriver.device_spec()
     end
   end
 

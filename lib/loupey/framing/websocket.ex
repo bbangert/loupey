@@ -18,7 +18,7 @@ defmodule Loupey.Framing.Websocket do
     defstruct [:max_length, buffer: <<>>]
   end
 
-  def init(_args), do: {:ok, %State{max_length: 14096}}
+  def init(_args), do: {:ok, %State{max_length: 14_096}}
 
   def add_framing(data, state), do: {:ok, data, state}
 

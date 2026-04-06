@@ -58,36 +58,28 @@ defmodule Loupey.Bindings.LayoutEngine do
   """
   @spec clear_all(Spec.t()) :: [Loupey.RenderCommands.t()]
   def clear_all(spec) do
-    Enum.flat_map(spec.controls, fn control ->
-      cmds = []
+    Enum.flat_map(spec.controls, &clear_control/1)
+  end
 
-      cmds =
-        if Control.has_capability?(control, :display) do
-          display = control.display
-          pixels = Renderer.render_solid(control, "#000000")
+  defp clear_control(%Control{display: %{} = display} = control) do
+    pixels = Renderer.render_solid(control, :black)
 
-          cmds ++
-            [%DrawBuffer{
-              control_id: control.id,
-              x: 0,
-              y: 0,
-              width: display.width,
-              height: display.height,
-              pixels: pixels
-            }]
-        else
-          cmds
-        end
+    [%DrawBuffer{
+      control_id: control.id,
+      x: 0,
+      y: 0,
+      width: display.width,
+      height: display.height,
+      pixels: pixels
+    }] ++ clear_led(control)
+  end
 
-      cmds =
-        if Control.has_capability?(control, :led) do
-          cmds ++ [%SetLED{control_id: control.id, color: "#000000"}]
-        else
-          cmds
-        end
+  defp clear_control(control), do: clear_led(control)
 
-      cmds
-    end)
+  defp clear_led(control) do
+    if Control.has_capability?(control, :led),
+      do: [%SetLED{control_id: control.id, color: "#000000"}],
+      else: []
   end
 
   @doc """

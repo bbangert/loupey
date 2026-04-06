@@ -145,15 +145,15 @@ defmodule Loupey.Orchestrator do
 
   defp ensure_connected(device_id) do
     case Registry.lookup(Loupey.DeviceRegistry, device_id) do
-      [{_pid, _}] ->
-        :ok
+      [{_pid, _}] -> :ok
+      [] -> connect_by_id(device_id)
+    end
+  end
 
-      [] ->
-        # Find and connect this device
-        case Enum.find(Devices.discover(), fn {_d, tty} -> tty == device_id end) do
-          {driver, tty} -> Devices.connect(driver, tty)
-          nil -> :ok
-        end
+  defp connect_by_id(device_id) do
+    case Enum.find(Devices.discover(), fn {_d, tty} -> tty == device_id end) do
+      {driver, tty} -> Devices.connect(driver, tty)
+      nil -> :ok
     end
   end
 

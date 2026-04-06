@@ -83,28 +83,7 @@ defmodule Loupey.Profiles do
   def to_core_profile(%Profile{} = profile) do
     layouts =
       Map.new(profile.layouts, fn layout ->
-        bindings =
-          layout.bindings
-          |> Enum.group_by(& &1.control_id)
-          |> Map.new(fn {control_id_str, schema_bindings} ->
-            control_id = parse_control_id(control_id_str)
-
-            core_bindings =
-              Enum.flat_map(schema_bindings, fn sb ->
-                case Loupey.Schemas.Binding.to_core(sb) do
-                  {:ok, b} -> [b]
-                  _ -> []
-                end
-              end)
-
-            {control_id, core_bindings}
-          end)
-
-        {layout.name,
-         %Loupey.Bindings.Layout{
-           name: layout.name,
-           bindings: bindings
-         }}
+        {layout.name, convert_layout(layout)}
       end)
 
     %Loupey.Bindings.Profile{
@@ -113,6 +92,26 @@ defmodule Loupey.Profiles do
       active_layout: profile.active_layout || Map.keys(layouts) |> List.first(),
       layouts: layouts
     }
+  end
+
+  defp convert_layout(layout) do
+    bindings =
+      layout.bindings
+      |> Enum.group_by(& &1.control_id)
+      |> Map.new(fn {control_id_str, schema_bindings} ->
+        control_id = parse_control_id(control_id_str)
+        core_bindings = Enum.flat_map(schema_bindings, &convert_binding/1)
+        {control_id, core_bindings}
+      end)
+
+    %Loupey.Bindings.Layout{name: layout.name, bindings: bindings}
+  end
+
+  defp convert_binding(sb) do
+    case Binding.to_core(sb) do
+      {:ok, b} -> [b]
+      _ -> []
+    end
   end
 
   # Parse control_id strings back to the atom/tuple form used internally

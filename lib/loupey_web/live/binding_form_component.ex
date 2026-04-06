@@ -427,49 +427,49 @@ defmodule LoupeyWeb.BindingFormComponent do
   def handle_event("update_output_form", params, socket) do
     idx = String.to_integer(params["idx"])
     form_data = socket.assigns.form_data
-
-    rules =
-      List.update_at(form_data.output_rules, idx, fn rule ->
-        rule = put_if_present(rule, :when, parse_when_value(params["when"]))
-        rule = put_if_present(rule, :background, params["background"])
-        rule = put_if_present(rule, :color, params["color"])
-        rule = put_if_present(rule, :icon, params["icon"])
-
-        # Fill
-        fill_amount = params["fill_amount"]
-        fill_dir = params["fill_direction"]
-        fill_color = params["fill_color"]
-
-        rule =
-          if (fill_amount && fill_amount != "") or (fill_dir && fill_dir != "") do
-            fill = %{}
-            fill = if fill_amount != "", do: Map.put(fill, :amount, fill_amount), else: fill
-            fill = if fill_dir != "", do: Map.put(fill, :direction, fill_dir), else: fill
-            fill = if fill_color, do: Map.put(fill, :color, fill_color), else: fill
-            Map.put(rule, :fill, fill)
-          else
-            Map.delete(rule, :fill)
-          end
-
-        # Text — only keep if there's text content
-        text_content = params["text_content"]
-        text_valign = params["text_valign"]
-        text_color = params["text_color"]
-
-        rule =
-          if text_content && text_content != "" do
-            text = %{content: text_content}
-            text = if text_valign && text_valign != "", do: Map.put(text, :valign, text_valign), else: text
-            text = if text_color && text_color != "", do: Map.put(text, :color, text_color), else: text
-            Map.put(rule, :text, text)
-          else
-            Map.delete(rule, :text)
-          end
-
-        rule
-      end)
-
+    rules = List.update_at(form_data.output_rules, idx, &update_output_rule(&1, params))
     {:noreply, assign(socket, form_data: %{form_data | output_rules: rules})}
+  end
+
+  defp update_output_rule(rule, params) do
+    rule
+    |> put_if_present(:when, parse_when_value(params["when"]))
+    |> put_if_present(:background, params["background"])
+    |> put_if_present(:color, params["color"])
+    |> put_if_present(:icon, params["icon"])
+    |> update_fill(params)
+    |> update_text(params)
+  end
+
+  defp update_fill(rule, params) do
+    amount = params["fill_amount"]
+    dir = params["fill_direction"]
+    color = params["fill_color"]
+
+    if (amount && amount != "") or (dir && dir != "") do
+      fill = %{}
+      fill = if amount != "", do: Map.put(fill, :amount, amount), else: fill
+      fill = if dir != "", do: Map.put(fill, :direction, dir), else: fill
+      fill = if color, do: Map.put(fill, :color, color), else: fill
+      Map.put(rule, :fill, fill)
+    else
+      Map.delete(rule, :fill)
+    end
+  end
+
+  defp update_text(rule, params) do
+    content = params["text_content"]
+    valign = params["text_valign"]
+    color = params["text_color"]
+
+    if content && content != "" do
+      text = %{content: content}
+      text = if valign && valign != "", do: Map.put(text, :valign, valign), else: text
+      text = if color && color != "", do: Map.put(text, :color, color), else: text
+      Map.put(rule, :text, text)
+    else
+      Map.delete(rule, :text)
+    end
   end
 
   defp put_if_present(rule, _key, nil), do: rule
@@ -521,10 +521,7 @@ defmodule LoupeyWeb.BindingFormComponent do
   end
 
   def handle_event("save_from_visual", _params, socket) do
-    require Logger
-    Logger.debug("save_from_visual form_data: #{inspect(socket.assigns.form_data)}")
     yaml = form_to_yaml(socket.assigns.form_data, socket.assigns[:entity_id])
-    Logger.debug("save_from_visual generated yaml:\n#{yaml}")
     send(self(), {:save_binding_yaml, yaml})
     {:noreply, socket}
   end
@@ -537,91 +534,77 @@ defmodule LoupeyWeb.BindingFormComponent do
   # -- YAML generation --
 
   defp form_to_yaml(form_data, entity_id) do
-    parts = []
-
     parts =
-      if entity_id && entity_id != "" do
-        parts ++ ["entity_id: \"#{entity_id}\""]
-      else
-        parts
-      end
+      if entity_id && entity_id != "",
+        do: ["entity_id: \"#{entity_id}\""],
+        else: []
 
-    parts = parts ++ ["input_rules:"]
-
-    parts =
-      if form_data.input_rules == [] do
-        parts ++ ["  []"]
-      else
-        parts ++
-          Enum.flat_map(form_data.input_rules, fn rule ->
-            lines = ["  - on: #{rule.on}"]
-            lines = if rule[:when] && rule[:when] != "", do: lines ++ ["    when: '#{rule[:when]}'"], else: lines
-            lines = lines ++ ["    action: #{rule.action}"]
-
-            lines =
-              if rule.action == "call_service" do
-                lines ++
-                  if_present("    domain: ", rule[:domain]) ++
-                  if_present("    service: ", rule[:service]) ++
-                  if entity_id && entity_id != "", do: ["    target: \"#{entity_id}\""], else: []
-              else
-                lines
-              end
-
-            lines =
-              if rule.action == "switch_layout" && rule[:layout] && rule[:layout] != "" do
-                lines ++ ["    layout: \"#{rule[:layout]}\""]
-              else
-                lines
-              end
-
-            lines
-          end)
-      end
-
-    parts = parts ++ ["output_rules:"]
-
-    parts =
-      if form_data.output_rules == [] do
-        parts ++ ["  []"]
-      else
-        parts ++
-          Enum.flat_map(form_data.output_rules, fn rule ->
-            when_val = format_when_yaml(rule[:when])
-            lines = ["  - when: #{when_val}"]
-            lines = if_present(lines, "    background: ", rule[:background])
-            lines = if_present(lines, "    color: ", rule[:color])
-            lines = if_present(lines, "    icon: ", rule[:icon])
-
-            lines =
-              if rule[:fill] && map_size(rule[:fill]) > 0 do
-                fill = rule[:fill]
-                lines ++ ["    fill:"] ++
-                  if_present("      amount: ", fill[:amount]) ++
-                  if_present("      direction: ", fill[:direction]) ++
-                  if_present("      color: ", fill[:color])
-              else
-                lines
-              end
-
-            lines =
-              if rule[:text] && is_map(rule[:text]) && rule[:text][:content] do
-                text = rule[:text]
-                lines ++ ["    text:"] ++
-                  ["      content: \"#{text[:content]}\""] ++
-                  if_present("      valign: ", text[:valign]) ++
-                  if_present("      font_size: ", text[:font_size]) ++
-                  if_present("      color: ", text[:color])
-              else
-                lines
-              end
-
-            lines
-          end)
-      end
+    parts = parts ++ ["input_rules:"] ++ input_rules_to_yaml(form_data.input_rules, entity_id)
+    parts = parts ++ ["output_rules:"] ++ output_rules_to_yaml(form_data.output_rules)
 
     Enum.join(parts, "\n") <> "\n"
   end
+
+  defp input_rules_to_yaml([], _entity_id), do: ["  []"]
+
+  defp input_rules_to_yaml(rules, entity_id) do
+    Enum.flat_map(rules, &input_rule_to_yaml(&1, entity_id))
+  end
+
+  defp input_rule_to_yaml(rule, entity_id) do
+    lines = ["  - on: #{rule.on}"]
+    lines = if rule[:when] && rule[:when] != "", do: lines ++ ["    when: '#{rule[:when]}'"], else: lines
+    lines = lines ++ ["    action: #{rule.action}"]
+    lines = lines ++ input_action_yaml(rule, entity_id)
+    lines
+  end
+
+  defp input_action_yaml(%{action: "call_service"} = rule, entity_id) do
+    if_present("    domain: ", rule[:domain]) ++
+      if_present("    service: ", rule[:service]) ++
+      if(entity_id && entity_id != "", do: ["    target: \"#{entity_id}\""], else: [])
+  end
+
+  defp input_action_yaml(%{action: "switch_layout"} = rule, _entity_id) do
+    if rule[:layout] && rule[:layout] != "",
+      do: ["    layout: \"#{rule[:layout]}\""],
+      else: []
+  end
+
+  defp input_action_yaml(_rule, _entity_id), do: []
+
+  defp output_rules_to_yaml([]), do: ["  []"]
+
+  defp output_rules_to_yaml(rules) do
+    Enum.flat_map(rules, &output_rule_to_yaml/1)
+  end
+
+  defp output_rule_to_yaml(rule) do
+    lines = ["  - when: #{format_when_yaml(rule[:when])}"]
+    lines = if_present(lines, "    background: ", rule[:background])
+    lines = if_present(lines, "    color: ", rule[:color])
+    lines = if_present(lines, "    icon: ", rule[:icon])
+    lines = lines ++ fill_to_yaml(rule[:fill])
+    lines ++ text_to_yaml(rule[:text])
+  end
+
+  defp fill_to_yaml(%{} = fill) when map_size(fill) > 0 do
+    ["    fill:"] ++
+      if_present("      amount: ", fill[:amount]) ++
+      if_present("      direction: ", fill[:direction]) ++
+      if_present("      color: ", fill[:color])
+  end
+
+  defp fill_to_yaml(_), do: []
+
+  defp text_to_yaml(%{content: content} = text) when is_binary(content) and content != "" do
+    ["    text:", "      content: \"#{content}\""] ++
+      if_present("      valign: ", text[:valign]) ++
+      if_present("      font_size: ", text[:font_size]) ++
+      if_present("      color: ", text[:color])
+  end
+
+  defp text_to_yaml(_), do: []
 
   defp if_present(prefix, value) when is_binary(prefix) do
     if value && value != "" do
@@ -679,37 +662,44 @@ defmodule LoupeyWeb.BindingFormComponent do
   end
 
   defp parse_form_output_rules(rules) do
-    Enum.map(rules, fn rule ->
-      base = %{when: rule["when"] || "true"}
-      base = if rule["background"], do: Map.put(base, :background, rule["background"]), else: base
-      base = if rule["color"], do: Map.put(base, :color, rule["color"]), else: base
-      base = if rule["icon"], do: Map.put(base, :icon, rule["icon"]), else: base
-
-      base =
-        if is_map(rule["fill"]) do
-          fill = %{}
-          fill = if rule["fill"]["amount"], do: Map.put(fill, :amount, rule["fill"]["amount"]), else: fill
-          fill = if rule["fill"]["direction"], do: Map.put(fill, :direction, rule["fill"]["direction"]), else: fill
-          fill = if rule["fill"]["color"], do: Map.put(fill, :color, rule["fill"]["color"]), else: fill
-          if fill != %{}, do: Map.put(base, :fill, fill), else: base
-        else
-          base
-        end
-
-      base =
-        if is_map(rule["text"]) do
-          text = %{content: rule["text"]["content"]}
-          text = if rule["text"]["valign"], do: Map.put(text, :valign, rule["text"]["valign"]), else: text
-          text = if rule["text"]["font_size"], do: Map.put(text, :font_size, rule["text"]["font_size"]), else: text
-          text = if rule["text"]["color"], do: Map.put(text, :color, rule["text"]["color"]), else: text
-          Map.put(base, :text, text)
-        else
-          base
-        end
-
-      base
-    end)
+    Enum.map(rules, &parse_form_output_rule/1)
   end
+
+  defp parse_form_output_rule(rule) do
+    %{when: rule["when"] || "true"}
+    |> maybe_put(:background, rule["background"])
+    |> maybe_put(:color, rule["color"])
+    |> maybe_put(:icon, rule["icon"])
+    |> parse_form_fill(rule["fill"])
+    |> parse_form_text(rule["text"])
+  end
+
+  defp parse_form_fill(base, %{} = fill) do
+    parsed =
+      %{}
+      |> maybe_put(:amount, fill["amount"])
+      |> maybe_put(:direction, fill["direction"])
+      |> maybe_put(:color, fill["color"])
+
+    if parsed != %{}, do: Map.put(base, :fill, parsed), else: base
+  end
+
+  defp parse_form_fill(base, _), do: base
+
+  defp parse_form_text(base, %{} = text) do
+    parsed =
+      %{content: text["content"]}
+      |> maybe_put(:valign, text["valign"])
+      |> maybe_put(:font_size, text["font_size"])
+      |> maybe_put(:color, text["color"])
+
+    Map.put(base, :text, parsed)
+  end
+
+  defp parse_form_text(base, _), do: base
+
+  defp maybe_put(map, _key, nil), do: map
+  defp maybe_put(map, key, value), do: Map.put(map, key, value)
 
   defp extract_rule_param(params, prefix) do
     case params[prefix] do
@@ -757,27 +747,25 @@ defmodule LoupeyWeb.BindingFormComponent do
 
     case File.ls(dir) do
       {:ok, entries} ->
-        Enum.flat_map(entries, fn entry ->
-          relative = if relative_prefix == "", do: entry, else: Path.join(relative_prefix, entry)
-          full_path = Path.join(base_dir, relative)
-
-          cond do
-            File.dir?(full_path) ->
-              scan_dir_recursive(base_dir, relative)
-
-            String.match?(entry, ~r/\.(png|jpg|jpeg|svg|gif)$/i) ->
-              [%{
-                name: Path.rootname(entry),
-                path: Path.join("icons", relative),
-                relative: relative
-              }]
-
-            true ->
-              []
-          end
-        end)
+        Enum.flat_map(entries, &classify_entry(base_dir, relative_prefix, &1))
 
       _ ->
+        []
+    end
+  end
+
+  defp classify_entry(base_dir, prefix, entry) do
+    relative = if prefix == "", do: entry, else: Path.join(prefix, entry)
+    full_path = Path.join(base_dir, relative)
+
+    cond do
+      File.dir?(full_path) ->
+        scan_dir_recursive(base_dir, relative)
+
+      String.match?(entry, ~r/\.(png|jpg|jpeg|svg|gif)$/i) ->
+        [%{name: Path.rootname(entry), path: Path.join("icons", relative), relative: relative}]
+
+      true ->
         []
     end
   end

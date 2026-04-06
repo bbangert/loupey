@@ -29,7 +29,6 @@ defmodule Loupey.MixProject do
       # Device communication
       {:circuits_uart, "~> 1.5"},
       {:image, "~> 0.55.2"},
-      {:typed_struct, "~> 0.3.0"},
 
       # Home Assistant
       {:websockex, "~> 0.4.3"},

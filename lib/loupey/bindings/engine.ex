@@ -14,7 +14,7 @@ defmodule Loupey.Bindings.Engine do
   require Logger
 
   alias Loupey.Bindings.{LayoutEngine, Profile, Rules}
-  alias Loupey.Device.Control
+  alias Loupey.Device.{Control, Spec}
   alias Loupey.DeviceServer
   alias Loupey.Events.TouchEvent
   alias Loupey.HA
@@ -141,7 +141,7 @@ defmodule Loupey.Bindings.Engine do
 
     if layout do
       control_id = event_control_id(event)
-      control = Loupey.Device.Spec.find_control(state.spec, control_id)
+      control = Spec.find_control(state.spec, control_id)
       bindings = Map.get(layout.bindings, control_id, [])
 
       Enum.reduce(bindings, state, fn binding, acc ->
@@ -170,7 +170,7 @@ defmodule Loupey.Bindings.Engine do
         state
 
       {:action, "call_service", params} ->
-        if is_touch_move?(event) do
+        if touch_move?(event) do
           debounce_touch_move(params, state)
         else
           execute_service_call(params)
@@ -182,8 +182,8 @@ defmodule Loupey.Bindings.Engine do
     end
   end
 
-  defp is_touch_move?(%TouchEvent{action: :move}), do: true
-  defp is_touch_move?(_), do: false
+  defp touch_move?(%TouchEvent{action: :move}), do: true
+  defp touch_move?(_), do: false
 
   defp debounce_touch_move(params, state) do
     now = System.monotonic_time(:millisecond)
