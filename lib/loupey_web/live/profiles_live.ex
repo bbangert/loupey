@@ -166,22 +166,24 @@ defmodule LoupeyWeb.ProfilesLive do
   end
 
   def handle_event("activate_profile", %{"id" => id}, socket) do
-    # Deactivate all, then activate this one
-    for p <- Profiles.list_profiles(), p.active, do: Profiles.update_profile(p, %{"active" => false})
+    case Loupey.Orchestrator.activate_profile(String.to_integer(id)) do
+      {:ok, _profile} ->
+        {:noreply,
+         socket
+         |> put_flash(:info, "Profile activated and engines started")
+         |> assign(profiles: Profiles.list_profiles())}
 
-    profile = Profiles.get_profile(String.to_integer(id))
-    if profile, do: Profiles.update_profile(profile, %{"active" => true})
-
-    {:noreply,
-     socket
-     |> put_flash(:info, "Profile activated")
-     |> assign(profiles: Profiles.list_profiles())}
+      {:error, reason} ->
+        {:noreply, put_flash(socket, :error, "Failed to activate: #{inspect(reason)}")}
+    end
   end
 
   def handle_event("deactivate_profile", %{"id" => id}, socket) do
-    profile = Profiles.get_profile(String.to_integer(id))
-    if profile, do: Profiles.update_profile(profile, %{"active" => false})
+    Loupey.Orchestrator.deactivate_profile(String.to_integer(id))
 
-    {:noreply, assign(socket, profiles: Profiles.list_profiles())}
+    {:noreply,
+     socket
+     |> put_flash(:info, "Profile deactivated")
+     |> assign(profiles: Profiles.list_profiles())}
   end
 end

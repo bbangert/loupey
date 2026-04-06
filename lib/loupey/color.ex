@@ -87,8 +87,16 @@ defmodule Loupey.Color do
   * `rgb565` - A binary in little-endian format
 
   """
+  # Gamma correction to compensate for LCD panels rendering darker than sRGB monitors.
+  # Applied before RGB565 quantization. Lower values = brighter output.
+  @gamma_correction 0.85
+
   @spec rgb_to_rgb565([integer(), ...]) :: <<_::16>>
   def rgb_to_rgb565([r, g, b]) do
+    r = gamma_correct(r)
+    g = gamma_correct(g)
+    b = gamma_correct(b)
+
     r5 = (r >>> 3) <<< 11
     g6 = (g >>> 2) <<< 5
     b5 = b >>> 3
@@ -102,4 +110,11 @@ defmodule Loupey.Color do
 
   @spec rgb_to_rgb565(binary()) :: binary()
   def rgb_to_rgb565(<<>>), do: <<>>
+
+  defp gamma_correct(0), do: 0
+  defp gamma_correct(255), do: 255
+
+  defp gamma_correct(value) do
+    round(:math.pow(value / 255, @gamma_correction) * 255)
+  end
 end

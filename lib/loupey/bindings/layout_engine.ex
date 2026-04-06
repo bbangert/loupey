@@ -53,6 +53,44 @@ defmodule Loupey.Bindings.LayoutEngine do
   end
 
   @doc """
+  Produce RenderCommands that clear all display and LED controls to black/off.
+  Used before re-rendering to ensure removed bindings don't leave stale content.
+  """
+  @spec clear_all(Spec.t()) :: [Loupey.RenderCommands.t()]
+  def clear_all(spec) do
+    Enum.flat_map(spec.controls, fn control ->
+      cmds = []
+
+      cmds =
+        if Control.has_capability?(control, :display) do
+          display = control.display
+          pixels = Renderer.render_solid(control, "#000000")
+
+          cmds ++
+            [%DrawBuffer{
+              control_id: control.id,
+              x: 0,
+              y: 0,
+              width: display.width,
+              height: display.height,
+              pixels: pixels
+            }]
+        else
+          cmds
+        end
+
+      cmds =
+        if Control.has_capability?(control, :led) do
+          cmds ++ [%SetLED{control_id: control.id, color: "#000000"}]
+        else
+          cmds
+        end
+
+      cmds
+    end)
+  end
+
+  @doc """
   Render a single control's bindings, producing RenderCommands.
 
   Used when a specific entity's state changes — only re-render controls

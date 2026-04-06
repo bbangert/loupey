@@ -26,10 +26,21 @@ defmodule Loupey.Application do
 
     # Auto-connect to HA if there's a saved config
     with {:ok, _} <- result do
-      auto_connect_ha()
+      auto_start()
     end
 
     result
+  end
+
+  defp auto_start do
+    auto_connect_ha()
+    # Give HA a moment to connect before starting engines
+    Task.start(fn ->
+      Process.sleep(2000)
+      Loupey.Orchestrator.connect_all_devices()
+    end)
+  rescue
+    _ -> :ok
   end
 
   defp auto_connect_ha do

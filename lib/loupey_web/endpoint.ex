@@ -18,6 +18,12 @@ defmodule LoupeyWeb.Endpoint do
     gzip: false,
     only: LoupeyWeb.static_paths()
 
+  # Serve the icons directory for the icon browser
+  plug Plug.Static,
+    at: "/icons",
+    from: Path.join(File.cwd!(), "icons"),
+    gzip: false
+
   if code_reloading? do
     socket "/phoenix/live_reload/socket", Phoenix.LiveReloader.Socket
     plug Phoenix.LiveReloader

@@ -122,6 +122,11 @@ defmodule Loupey.Bindings.Engine do
     entity_states = Map.merge(state.entity_states, new_entity_states)
 
     state = %{state | profile: profile, entity_states: entity_states}
+
+    # Clear all controls first to remove stale content from deleted bindings
+    clear_commands = LayoutEngine.clear_all(state.spec)
+    send_commands(state.device_id, clear_commands, state.spec)
+
     render_active_layout(state)
     {:noreply, state}
   end

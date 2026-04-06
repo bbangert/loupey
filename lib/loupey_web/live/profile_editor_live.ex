@@ -20,13 +20,15 @@ defmodule LoupeyWeb.ProfileEditorLive do
          spec: spec,
          layouts: layouts,
          active_layout: active_layout,
+         active_bindings: layout_bindings(active_layout),
          selected_control: nil,
          editing_binding: nil,
          show_new_layout: false,
          entity_search: "",
          entity_matches: [],
          show_entity_dropdown: false,
-         binding_yaml: ""
+         binding_yaml: "",
+         editor_mode: :visual
        )}
     else
       {:ok,
@@ -108,12 +110,13 @@ defmodule LoupeyWeb.ProfileEditorLive do
               </span>
             </h2>
 
-            <.device_grid
-              :if={@spec && @active_layout}
-              spec={@spec}
-              bindings={layout_bindings(@active_layout)}
-              selected={@selected_control}
-            />
+            <div :if={@spec && @active_layout} id={"grid-#{@active_layout.id}"}>
+              <.device_grid
+                spec={@spec}
+                bindings={@active_bindings}
+                selected={@selected_control}
+              />
+            </div>
 
             <div :if={!@active_layout} class="text-center text-gray-500 py-8">
               Create a layout first to configure controls.
@@ -158,15 +161,49 @@ defmodule LoupeyWeb.ProfileEditorLive do
                 />
               </div>
 
+              <%!-- Editor mode tabs --%>
+              <div class="flex gap-1 mt-3 mb-2">
+                <button
+                  phx-click="set_editor_mode"
+                  phx-value-mode="visual"
+                  class={[
+                    "text-xs px-3 py-1 rounded-t",
+                    if(@editor_mode == :visual, do: "bg-gray-900 text-white", else: "bg-gray-700 text-gray-400")
+                  ]}
+                >
+                  Visual
+                </button>
+                <button
+                  phx-click="set_editor_mode"
+                  phx-value-mode="yaml"
+                  class={[
+                    "text-xs px-3 py-1 rounded-t",
+                    if(@editor_mode == :yaml, do: "bg-gray-900 text-white", else: "bg-gray-700 text-gray-400")
+                  ]}
+                >
+                  YAML
+                </button>
+              </div>
+
+              <%!-- Visual configurator --%>
+              <div :if={@editor_mode == :visual} class="bg-gray-900 rounded-b rounded-tr p-3 border border-gray-700">
+                <.live_component
+                  module={LoupeyWeb.BindingFormComponent}
+                  id="binding_form"
+                  yaml={@binding_yaml}
+                  entity_id={@entity_search}
+                  editing={@editing_binding != nil and @editing_binding.id != nil}
+                />
+              </div>
+
               <%!-- YAML editor --%>
-              <div class="mt-3">
-                <label class="block text-xs text-gray-400 mb-1">Binding YAML</label>
+              <div :if={@editor_mode == :yaml}>
                 <form phx-submit="save_binding">
                   <textarea
                     name="yaml"
                     rows="18"
                     phx-debounce="500"
-                    class="w-full bg-gray-900 border border-gray-600 rounded-lg px-3 py-2 text-xs text-green-300 font-mono leading-relaxed"
+                    class="w-full bg-gray-900 border border-gray-600 rounded-b rounded-tr px-3 py-2 text-xs text-green-300 font-mono leading-relaxed"
                   >{@binding_yaml}</textarea>
                   <div class="flex gap-2 mt-2">
                     <button
@@ -313,31 +350,26 @@ defmodule LoupeyWeb.ProfileEditorLive do
     """
   end
 
+  attr :control, :map, required: true
+  attr :bindings, :map, required: true
+  attr :selected, :any, default: nil
+  attr :class, :string, default: ""
+  attr :style, :string, default: ""
+
   defp control_cell(assigns) do
-    control = assigns.control
-    has_binding = Map.has_key?(assigns.bindings, format_control_id(control.id))
-    is_selected = assigns.selected == control.id
-    extra_class = assigns[:class] || ""
-    style = assigns[:style] || ""
-
-    assigns =
-      assigns
-      |> Map.put(:has_binding, has_binding)
-      |> Map.put(:is_selected, is_selected)
-      |> Map.put(:extra_class, extra_class)
-      |> Map.put(:cell_style, style)
-
     ~H"""
+    <% has_binding = Map.has_key?(@bindings, format_control_id(@control.id)) %>
+    <% is_selected = @selected == @control.id %>
     <button
       phx-click="select_control"
       phx-value-control={format_control_id(@control.id)}
-      style={@cell_style}
+      style={@style}
       class={[
         "border rounded text-center text-[9px] leading-tight flex items-center justify-center transition cursor-pointer",
-        @extra_class,
+        @class,
         cond do
-          @is_selected -> "border-blue-400 bg-blue-900/50 text-blue-300"
-          @has_binding -> "border-green-600 bg-green-900/30 text-green-400"
+          is_selected -> "border-blue-400 bg-blue-900/50 text-blue-300"
+          has_binding -> "border-green-600 bg-green-900/30 text-green-400"
           true -> "border-gray-600 bg-gray-700/50 text-gray-500 hover:border-gray-400"
         end
       ]}
@@ -383,8 +415,33 @@ defmodule LoupeyWeb.ProfileEditorLive do
   end
 
   def handle_event("select_layout", %{"id" => id}, socket) do
-    layout = Enum.find(socket.assigns.layouts, &(&1.id == String.to_integer(id)))
-    {:noreply, assign(socket, active_layout: layout, selected_control: nil, editing_binding: nil, binding_yaml: "")}
+    layout_id = String.to_integer(id)
+
+    # Reload profile from DB to get fresh bindings
+    profile = Profiles.get_profile(socket.assigns.profile.id)
+    layouts = profile.layouts |> Enum.sort_by(& &1.position)
+    layout = Enum.find(layouts, &(&1.id == layout_id))
+
+    # If profile is active, switch the device to show this layout
+    if layout && profile.active do
+      Profiles.update_profile(profile, %{"active_layout" => layout.name})
+      Loupey.Orchestrator.reload_active_profile()
+    end
+
+    bindings = layout_bindings(layout)
+    require Logger
+    Logger.debug("select_layout: #{layout.name} (id: #{layout.id}), bindings: #{inspect(Map.keys(bindings))}, count: #{map_size(bindings)}")
+
+    {:noreply,
+     assign(socket,
+       profile: profile,
+       layouts: layouts,
+       active_layout: layout,
+       active_bindings: bindings,
+       selected_control: nil,
+       editing_binding: nil,
+       binding_yaml: ""
+     )}
   end
 
   def handle_event("delete_layout", %{"id" => id}, socket) do
@@ -478,30 +535,33 @@ defmodule LoupeyWeb.ProfileEditorLive do
   end
 
   def handle_event("save_binding", %{"yaml" => yaml}, socket) do
+    {:noreply, elem(do_save_binding(yaml, socket), 1)}
+  end
+
+  defp do_save_binding(yaml, socket) do
     layout = socket.assigns.active_layout
     control_id_str = format_control_id(socket.assigns.selected_control)
-
-    # Extract entity_id from YAML
     entity_id = extract_entity_id(yaml)
 
     case socket.assigns.editing_binding do
       %Binding{id: id} when not is_nil(id) ->
-        # Update existing
         binding = Enum.find(layout.bindings, &(&1.id == id))
 
         case Profiles.update_binding(binding, %{"yaml" => yaml, "entity_id" => entity_id}) do
           {:ok, _} ->
-            {:noreply,
+            Loupey.Orchestrator.reload_active_profile()
+
+            {:ok,
              socket
+             |> assign(binding_yaml: yaml)
              |> reload_profile()
-             |> put_flash(:info, "Binding updated")}
+             |> put_flash(:info, "Binding saved")}
 
           {:error, _} ->
-            {:noreply, put_flash(socket, :error, "Failed to save binding")}
+            {:error, put_flash(socket, :error, "Failed to save binding")}
         end
 
       _ ->
-        # Create new
         case Profiles.create_binding(%{
                "layout_id" => layout.id,
                "control_id" => control_id_str,
@@ -509,15 +569,22 @@ defmodule LoupeyWeb.ProfileEditorLive do
                "yaml" => yaml
              }) do
           {:ok, _} ->
-            {:noreply,
+            Loupey.Orchestrator.reload_active_profile()
+
+            {:ok,
              socket
+             |> assign(binding_yaml: yaml)
              |> reload_profile()
-             |> put_flash(:info, "Binding created")}
+             |> put_flash(:info, "Binding saved")}
 
           {:error, _} ->
             {:noreply, put_flash(socket, :error, "Failed to create binding")}
         end
     end
+  end
+
+  def handle_event("set_editor_mode", %{"mode" => mode}, socket) do
+    {:noreply, assign(socket, editor_mode: String.to_atom(mode))}
   end
 
   def handle_event("delete_binding", _params, socket) do
@@ -534,6 +601,29 @@ defmodule LoupeyWeb.ProfileEditorLive do
   @impl true
   def handle_info(:hide_entity_dropdown, socket) do
     {:noreply, assign(socket, show_entity_dropdown: false)}
+  end
+
+  def handle_info({:update_yaml, yaml}, socket) do
+    {:noreply, assign(socket, binding_yaml: yaml, editor_mode: :yaml)}
+  end
+
+  def handle_info({:save_binding_yaml, yaml}, socket) do
+    # Reuse the save_binding logic with the generated YAML
+    socket = assign(socket, binding_yaml: yaml)
+    {:noreply, elem(do_save_binding(yaml, socket), 1)}
+  end
+
+  def handle_info(:delete_binding, socket) do
+    if socket.assigns.editing_binding do
+      Profiles.delete_binding(socket.assigns.editing_binding)
+      Loupey.Orchestrator.reload_active_profile()
+    end
+
+    {:noreply,
+     socket
+     |> reload_profile()
+     |> assign(editing_binding: nil, binding_yaml: "", selected_control: nil)
+     |> put_flash(:info, "Binding removed")}
   end
 
   # -- Helpers --
@@ -583,6 +673,7 @@ defmodule LoupeyWeb.ProfileEditorLive do
       profile: profile,
       layouts: layouts,
       active_layout: active_layout,
+      active_bindings: layout_bindings(active_layout),
       editing_binding: editing_binding,
       binding_yaml: binding_yaml
     )
