@@ -22,7 +22,7 @@ defmodule Loupey.Bindings.Expression do
 
   """
 
-  alias Loupey.HA.EntityState
+  alias Loupey.HA.{EntityState, StateCache}
 
   @doc """
   Evaluate a single expression string against entity state.
@@ -76,12 +76,7 @@ defmodule Loupey.Bindings.Expression do
   @spec resolve(term(), EntityState.t() | nil) :: term()
   def resolve(value, entity_state) when is_binary(value) do
     if String.contains?(value, "{{") do
-      rendered = render(value, entity_state)
-
-      case Float.parse(rendered) do
-        {num, ""} -> num
-        _ -> rendered
-      end
+      value |> render(entity_state) |> maybe_parse_number()
     else
       value
     end
@@ -98,20 +93,9 @@ defmodule Loupey.Bindings.Expression do
     if String.contains?(value, "{{") do
       bindings = build_bindings(entity_state) ++ Enum.to_list(extra_context)
 
-      rendered =
-        Regex.replace(~r/\{\{\s*(.+?)\s*\}\}/, value, fn _match, expr ->
-          try do
-            {result, _} = Code.eval_string(rewrite_function_calls(expr), bindings)
-            to_string(result)
-          rescue
-            _ -> ""
-          end
-        end)
-
-      case Float.parse(rendered) do
-        {num, ""} -> num
-        _ -> rendered
-      end
+      value
+      |> replace_templates(bindings)
+      |> maybe_parse_number()
     else
       value
     end
@@ -130,6 +114,26 @@ defmodule Loupey.Bindings.Expression do
   end
 
   def extract_entity_refs(_), do: []
+
+  defp replace_templates(value, bindings) do
+    Regex.replace(~r/\{\{\s*(.+?)\s*\}\}/, value, fn _match, expr ->
+      safe_eval(expr, bindings)
+    end)
+  end
+
+  defp safe_eval(expr, bindings) do
+    {result, _} = Code.eval_string(rewrite_function_calls(expr), bindings)
+    to_string(result)
+  rescue
+    _ -> ""
+  end
+
+  defp maybe_parse_number(rendered) do
+    case Float.parse(rendered) do
+      {num, ""} -> num
+      _ -> rendered
+    end
+  end
 
   # Rewrite state_of("x") → state_of.("x") and attr_of("x", "y") → attr_of.("x", "y")
   # so Code.eval_string treats them as variable function calls, not module function calls.
@@ -154,14 +158,14 @@ defmodule Loupey.Bindings.Expression do
   end
 
   defp state_of(entity_id) do
-    case Loupey.HA.StateCache.get(entity_id) do
+    case StateCache.get(entity_id) do
       %{state: state} -> state
       nil -> nil
     end
   end
 
   defp attr_of(entity_id, attribute_name) do
-    case Loupey.HA.StateCache.get(entity_id) do
+    case StateCache.get(entity_id) do
       %{attributes: attrs} -> Map.get(attrs, attribute_name)
       nil -> nil
     end

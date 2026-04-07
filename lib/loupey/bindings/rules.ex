@@ -116,21 +116,28 @@ defmodule Loupey.Bindings.Rules do
   def enrich_event_context(context, _control), do: context
 
   defp resolve_instructions(instructions, entity_state) do
-    Map.new(instructions, fn
-      {:text, %{content: _} = text_opts} ->
-        {:text, Map.new(text_opts, fn {k, v} -> {k, Expression.resolve(v, entity_state)} end)}
+    Map.new(instructions, &resolve_instruction(&1, entity_state))
+  end
 
-      {:text, text} when is_binary(text) ->
-        {:text, Expression.render(text, entity_state)}
+  defp resolve_instruction({:text, %{content: _} = opts}, entity_state) do
+    {:text, resolve_map_values(opts, entity_state)}
+  end
 
-      {:fill, %{} = fill} ->
-        {:fill, Map.new(fill, fn {k, v} -> {k, Expression.resolve(v, entity_state)} end)}
+  defp resolve_instruction({:text, text}, entity_state) when is_binary(text) do
+    {:text, Expression.render(text, entity_state)}
+  end
 
-      {key, value} when is_binary(value) ->
-        {key, Expression.resolve(value, entity_state)}
+  defp resolve_instruction({:fill, fill}, entity_state) when is_map(fill) do
+    {:fill, resolve_map_values(fill, entity_state)}
+  end
 
-      {key, value} ->
-        {key, value}
-    end)
+  defp resolve_instruction({key, value}, entity_state) when is_binary(value) do
+    {key, Expression.resolve(value, entity_state)}
+  end
+
+  defp resolve_instruction(pair, _entity_state), do: pair
+
+  defp resolve_map_values(map, entity_state) do
+    Map.new(map, fn {k, v} -> {k, Expression.resolve(v, entity_state)} end)
   end
 end

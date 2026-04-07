@@ -284,21 +284,18 @@ defmodule Loupey.Bindings.Engine do
     target = Map.get(params, :target) || Map.get(params, "target")
 
     if domain && service do
-      target_map =
-        cond do
-          is_binary(target) -> %{entity_id: target}
-          is_map(target) -> target
-          true -> nil
-        end
-
       HA.call_service(%ServiceCall{
         domain: domain,
         service: service,
-        target: target_map,
+        target: format_target(target),
         service_data: Map.get(params, :service_data, %{})
       })
     end
   end
+
+  defp format_target(target) when is_binary(target), do: %{entity_id: target}
+  defp format_target(target) when is_map(target), do: target
+  defp format_target(_), do: nil
 
   defp collect_entity_ids(%Profile{layouts: layouts}) do
     all_bindings =

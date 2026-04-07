@@ -46,30 +46,7 @@ defmodule LoupeyWeb.BindingFormComponent do
     new_yaml = assigns[:yaml] || prev_yaml || ""
     yaml_changed = prev_yaml != new_yaml
 
-    # Handle messages forwarded from parent via send_update
-    form_data =
-      cond do
-        assigns[:action_target_selected] ->
-          {indices, entity_id} = assigns[:action_target_selected]
-          fd = socket.assigns[:form_data] || parse_yaml_to_form(new_yaml)
-          apply_action_target(fd, indices, entity_id)
-
-        assigns[:condition_update] ->
-          {idx_str, expr} = assigns[:condition_update]
-          fd = socket.assigns[:form_data] || parse_yaml_to_form(new_yaml)
-          apply_condition_update(fd, idx_str, expr)
-
-        assigns[:text_insert] ->
-          {idx_str, expr} = assigns[:text_insert]
-          fd = socket.assigns[:form_data] || parse_yaml_to_form(new_yaml)
-          apply_text_insert(fd, idx_str, expr)
-
-        first_mount or yaml_changed ->
-          parse_yaml_to_form(new_yaml)
-
-        true ->
-          socket.assigns.form_data
-      end
+    form_data = resolve_form_data(assigns, socket, first_mount, yaml_changed, new_yaml)
 
     socket =
       socket
@@ -609,35 +586,28 @@ defmodule LoupeyWeb.BindingFormComponent do
   end
 
   defp update_fill(rule, params) do
-    amount = params["fill_amount"]
-    dir = params["fill_direction"]
-    color = params["fill_color"]
+    fill =
+      %{}
+      |> put_if_not_empty(:amount, params["fill_amount"])
+      |> put_if_not_empty(:direction, params["fill_direction"])
+      |> put_if_not_empty(:color, params["fill_color"])
 
-    if (amount && amount != "") or (dir && dir != "") do
-      fill = %{}
-      fill = if amount != "", do: Map.put(fill, :amount, amount), else: fill
-      fill = if dir != "", do: Map.put(fill, :direction, dir), else: fill
-      fill = if color, do: Map.put(fill, :color, color), else: fill
-      Map.put(rule, :fill, fill)
-    else
-      Map.delete(rule, :fill)
-    end
+    if fill == %{}, do: Map.delete(rule, :fill), else: Map.put(rule, :fill, fill)
   end
 
   defp update_text(rule, params) do
-    content = params["text_content"]
-    valign = params["text_valign"]
-    color = params["text_color"]
+    text =
+      %{}
+      |> put_if_not_empty(:content, params["text_content"])
+      |> put_if_not_empty(:valign, params["text_valign"])
+      |> put_if_not_empty(:color, params["text_color"])
 
-    if content && content != "" do
-      text = %{content: content}
-      text = if valign && valign != "", do: Map.put(text, :valign, valign), else: text
-      text = if color && color != "", do: Map.put(text, :color, color), else: text
-      Map.put(rule, :text, text)
-    else
-      Map.delete(rule, :text)
-    end
+    if text == %{}, do: Map.delete(rule, :text), else: Map.put(rule, :text, text)
   end
+
+  defp put_if_not_empty(map, _key, nil), do: map
+  defp put_if_not_empty(map, _key, ""), do: map
+  defp put_if_not_empty(map, key, value), do: Map.put(map, key, value)
 
   defp put_if_present(rule, _key, nil), do: rule
   defp put_if_present(rule, _key, ""), do: rule
@@ -686,10 +656,8 @@ defmodule LoupeyWeb.BindingFormComponent do
     ["    actions:"] ++
       Enum.flat_map(actions, fn action ->
         lines = action_to_yaml_lines(action, "          ")
-        case lines do
-          [first | rest] -> ["      - " <> String.trim_leading(first) | rest]
-          [] -> []
-        end
+        [first | rest] = lines
+        ["      - " <> String.trim_leading(first) | rest]
       end)
   end
 
@@ -813,25 +781,19 @@ defmodule LoupeyWeb.BindingFormComponent do
   end
 
   defp parse_form_input_rule(rule) do
-    actions =
-      cond do
-        is_list(rule["actions"]) ->
-          Enum.map(rule["actions"], &parse_form_action/1)
-
-        rule["action"] ->
-          # Old single-action format
-          [parse_form_action(rule)]
-
-        true ->
-          []
-      end
-
     %{
       on: rule["on"] || "press",
       when: rule["when"],
-      actions: actions
+      actions: parse_rule_actions(rule)
     }
   end
+
+  defp parse_rule_actions(%{"actions" => actions}) when is_list(actions) do
+    Enum.map(actions, &parse_form_action/1)
+  end
+
+  defp parse_rule_actions(%{"action" => _} = rule), do: [parse_form_action(rule)]
+  defp parse_rule_actions(_), do: []
 
   defp parse_form_action(action) do
     base = %{
@@ -965,18 +927,7 @@ defmodule LoupeyWeb.BindingFormComponent do
 
         rules =
           List.update_at(form_data.input_rules, ridx, fn rule ->
-            actions =
-              List.update_at(rule.actions, aidx, fn action ->
-                action = Map.put(action, :target, entity_id)
-
-                # Auto-populate domain if empty
-                if (action[:domain] || "") == "" do
-                  Map.put(action, :domain, domain)
-                else
-                  action
-                end
-              end)
-
+            actions = List.update_at(rule.actions, aidx, &set_action_target(&1, entity_id, domain))
             %{rule | actions: actions}
           end)
 
@@ -1024,6 +975,35 @@ defmodule LoupeyWeb.BindingFormComponent do
       end)
 
     %{form_data | output_rules: rules}
+  end
+
+  defp resolve_form_data(assigns, socket, first_mount, yaml_changed, new_yaml) do
+    current = socket.assigns[:form_data] || parse_yaml_to_form(new_yaml)
+
+    case apply_parent_update(assigns, current) do
+      {:ok, form_data} -> form_data
+      :none when first_mount or yaml_changed -> parse_yaml_to_form(new_yaml)
+      :none -> socket.assigns.form_data
+    end
+  end
+
+  defp apply_parent_update(%{action_target_selected: {indices, entity_id}}, form_data) do
+    {:ok, apply_action_target(form_data, indices, entity_id)}
+  end
+
+  defp apply_parent_update(%{condition_update: {idx_str, expr}}, form_data) do
+    {:ok, apply_condition_update(form_data, idx_str, expr)}
+  end
+
+  defp apply_parent_update(%{text_insert: {idx_str, expr}}, form_data) do
+    {:ok, apply_text_insert(form_data, idx_str, expr)}
+  end
+
+  defp apply_parent_update(_assigns, _form_data), do: :none
+
+  defp set_action_target(action, entity_id, domain) do
+    action = Map.put(action, :target, entity_id)
+    if (action[:domain] || "") == "", do: Map.put(action, :domain, domain), else: action
   end
 
   defp services_for_domain("", _services), do: []
@@ -1075,18 +1055,18 @@ defmodule LoupeyWeb.BindingFormComponent do
   end
 
   defp classify_entry(base_dir, prefix, entry) do
-    relative = if prefix == "", do: entry, else: Path.join(prefix, entry)
+    relative = build_relative_path(prefix, entry)
     full_path = Path.join(base_dir, relative)
 
     cond do
-      File.dir?(full_path) ->
-        scan_dir_recursive(base_dir, relative)
-
-      String.match?(entry, ~r/\.(png|jpg|jpeg|svg|gif)$/i) ->
-        [%{name: Path.rootname(entry), path: Path.join("icons", relative), relative: relative}]
-
-      true ->
-        []
+      File.dir?(full_path) -> scan_dir_recursive(base_dir, relative)
+      image_file?(entry) -> [%{name: Path.rootname(entry), path: Path.join("icons", relative), relative: relative}]
+      true -> []
     end
   end
+
+  defp build_relative_path("", entry), do: entry
+  defp build_relative_path(prefix, entry), do: Path.join(prefix, entry)
+
+  defp image_file?(entry), do: String.match?(entry, ~r/\.(png|jpg|jpeg|svg|gif)$/i)
 end

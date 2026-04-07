@@ -175,14 +175,15 @@ defmodule Loupey.Orchestrator do
     core_profile = Profiles.to_core_profile(profile)
 
     for {_driver, tty} <- Devices.discover() do
-      device_id = tty
-      ensure_connected(device_id)
+      ensure_connected(tty)
+      maybe_start_engine(tty, core_profile, profile.device_type)
+    end
+  end
 
-      spec = safe_get_spec(device_id)
-
-      if spec && spec.type == profile.device_type do
-        start_or_update_engine(device_id, core_profile)
-      end
+  defp maybe_start_engine(device_id, core_profile, expected_type) do
+    case safe_get_spec(device_id) do
+      %{type: ^expected_type} -> start_or_update_engine(device_id, core_profile)
+      _ -> :ok
     end
   end
 
@@ -252,9 +253,13 @@ defmodule Loupey.Orchestrator do
   defp safe_get_spec(device_id) do
     DeviceServer.get_spec(device_id)
   rescue
-    _ -> nil
+    error ->
+      Logger.debug("Failed to get spec for #{device_id}: #{inspect(error)}")
+      nil
   catch
-    :exit, _ -> nil
+    :exit, reason ->
+      Logger.debug("Process exit getting spec for #{device_id}: #{inspect(reason)}")
+      nil
   end
 
   defp build_status do

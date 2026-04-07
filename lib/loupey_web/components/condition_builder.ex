@@ -26,13 +26,10 @@ defmodule LoupeyWeb.ConditionBuilder do
     new_value = assigns[:value] || prev_value || ""
     value_changed = prev_value != new_value
 
-    # Parse the expression into builder fields when first mounting or value changes externally
     parsed =
-      if (first_mount or value_changed) and new_value != "" do
-        parse_expression(new_value)
-      else
-        nil
-      end
+      if (first_mount or value_changed) and new_value != "",
+        do: parse_expression(new_value),
+        else: nil
 
     {:ok,
      socket
@@ -40,15 +37,30 @@ defmodule LoupeyWeb.ConditionBuilder do
      |> assign(:component_id, assigns[:id])
      |> assign(:mode, assigns[:mode] || :condition)
      |> assign(:current_value, new_value)
-     |> assign(:raw_mode, (parsed && parsed.raw) || socket.assigns[:raw_mode] || false)
-     |> assign(:entity, (parsed && parsed.entity) || socket.assigns[:entity] || "")
-     |> assign(:property, (parsed && parsed.property) || socket.assigns[:property] || "state")
-     |> assign(:operator, (parsed && parsed.operator) || socket.assigns[:operator] || "==")
-     |> assign(:compare_value, (parsed && parsed.compare_value) || socket.assigns[:compare_value] || "")
-     |> assign(:attr_name, (parsed && parsed[:attr_name]) || socket.assigns[:attr_name] || "")
+     |> assign_parsed_fields(parsed)
      |> assign(:entity_matches, socket.assigns[:entity_matches] || [])
      |> assign(:show_entity_dropdown, socket.assigns[:show_entity_dropdown] || false)
      |> assign(:operators, @operators)}
+  end
+
+  defp assign_parsed_fields(socket, nil) do
+    socket
+    |> assign(:raw_mode, socket.assigns[:raw_mode] || false)
+    |> assign(:entity, socket.assigns[:entity] || "")
+    |> assign(:property, socket.assigns[:property] || "state")
+    |> assign(:operator, socket.assigns[:operator] || "==")
+    |> assign(:compare_value, socket.assigns[:compare_value] || "")
+    |> assign(:attr_name, socket.assigns[:attr_name] || "")
+  end
+
+  defp assign_parsed_fields(socket, parsed) do
+    socket
+    |> assign(:raw_mode, parsed.raw)
+    |> assign(:entity, parsed.entity)
+    |> assign(:property, parsed.property)
+    |> assign(:operator, parsed.operator)
+    |> assign(:compare_value, parsed.compare_value)
+    |> assign(:attr_name, parsed[:attr_name] || "")
   end
 
   # Parse an expression string back into builder fields
@@ -57,23 +69,31 @@ defmodule LoupeyWeb.ConditionBuilder do
 
   defp parse_expression(expr) do
     # Try to match: state_of("entity") op "value"
-    state_of_pattern = ~r/^state_of\("([^"]+)"\)\s*(==|!=|>|<|=~)\s*"?([^"]*)"?\s*$/
+    expr = String.trim(expr)
 
-    # Try to match: attr_of("entity", "attr") op "value"
-    attr_of_pattern = ~r/^attr_of\("([^"]+)",\s*"([^"]+)"\)\s*(==|!=|>|<|=~)\s*"?([^"]*)"?\s*$/
+    with :error <- parse_state_of_expr(expr),
+         :error <- parse_attr_of_expr(expr) do
+      %{entity: "", property: "state", operator: "==", compare_value: "", raw: true}
+    end
+  end
 
-    cond do
-      match = Regex.run(state_of_pattern, String.trim(expr)) ->
-        [_, entity, op, value] = match
+  defp parse_state_of_expr(expr) do
+    case Regex.run(~r/^state_of\("([^"]+)"\)\s*(==|!=|>|<|=~)\s*"?([^"]*)"?\s*$/, expr) do
+      [_, entity, op, value] ->
         %{entity: entity, property: "state", operator: op, compare_value: value, raw: false}
 
-      match = Regex.run(attr_of_pattern, String.trim(expr)) ->
-        [_, entity, attr, op, value] = match
+      nil ->
+        :error
+    end
+  end
+
+  defp parse_attr_of_expr(expr) do
+    case Regex.run(~r/^attr_of\("([^"]+)",\s*"([^"]+)"\)\s*(==|!=|>|<|=~)\s*"?([^"]*)"?\s*$/, expr) do
+      [_, entity, attr, op, value] ->
         %{entity: entity, property: "attribute", operator: op, compare_value: value, attr_name: attr, raw: false}
 
-      true ->
-        # Can't parse — show in raw mode
-        %{entity: "", property: "state", operator: "==", compare_value: "", raw: true}
+      nil ->
+        :error
     end
   end
 
