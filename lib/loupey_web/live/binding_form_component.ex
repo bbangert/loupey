@@ -500,9 +500,6 @@ defmodule LoupeyWeb.BindingFormComponent do
     {:noreply, assign(socket, form_data: %{form_data | input_rules: rules})}
   end
 
-  defp update_action_service_data(action, nil), do: action
-  defp update_action_service_data(action, sd), do: Map.put(action, :service_data, parse_service_data(sd))
-
   def handle_event("add_output_rule", _params, socket) do
     form_data = socket.assigns.form_data
     new_rule = %{when: "true", background: "#111111"}
@@ -574,6 +571,9 @@ defmodule LoupeyWeb.BindingFormComponent do
   end
 
   # -- Output form helpers --
+
+  defp update_action_service_data(action, nil), do: action
+  defp update_action_service_data(action, sd), do: Map.put(action, :service_data, parse_service_data(sd))
 
   defp update_output_rule(rule, params) do
     rule
@@ -852,33 +852,6 @@ defmodule LoupeyWeb.BindingFormComponent do
 
   defp maybe_put(map, _key, nil), do: map
   defp maybe_put(map, key, value), do: Map.put(map, key, value)
-
-  defp extract_rule_param(params, prefix) do
-    case params[prefix] do
-      nil ->
-        :error
-
-      rule_map ->
-        {idx_str, field_map} = Enum.find(rule_map, fn {_k, _v} -> true end)
-
-        {field_str, value} = Enum.find(field_map, fn {_k, _v} -> true end)
-
-        {:ok, String.to_integer(idx_str), String.to_atom(field_str), value}
-    end
-  end
-
-  defp extract_action_param(params) do
-    case params["action"] do
-      nil ->
-        :error
-
-      action_map ->
-        {ridx_str, inner} = Enum.find(action_map, fn {_k, _v} -> true end)
-        {aidx_str, field_map} = Enum.find(inner, fn {_k, _v} -> true end)
-        {field_str, value} = Enum.find(field_map, fn {_k, _v} -> true end)
-        {:ok, String.to_integer(ridx_str), String.to_integer(aidx_str), String.to_atom(field_str), value}
-    end
-  end
 
   defp format_when(true), do: "true"
   defp format_when("true"), do: "true"
