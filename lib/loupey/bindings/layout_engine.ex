@@ -6,7 +6,7 @@ defmodule Loupey.Bindings.LayoutEngine do
   No side effects — the BindingEngine GenServer calls these functions.
   """
 
-  alias Loupey.Bindings.{Layout, Profile, Rules}
+  alias Loupey.Bindings.{Expression, Layout, Profile, Rules}
   alias Loupey.Device.{Control, Spec}
   alias Loupey.Graphics.Renderer
   alias Loupey.HA.EntityState
@@ -93,11 +93,11 @@ defmodule Loupey.Bindings.LayoutEngine do
   def render_for_entity(%Layout{bindings: bindings}, entity_id, entity_state, spec) do
     bindings
     |> Enum.filter(fn {_control_id, control_bindings} ->
-      Enum.any?(control_bindings, &(&1.entity_id == entity_id))
+      Enum.any?(control_bindings, &binding_references_entity?(&1, entity_id))
     end)
     |> Enum.flat_map(fn {control_id, control_bindings} ->
       control = Spec.find_control(spec, control_id)
-      relevant = Enum.filter(control_bindings, &(&1.entity_id == entity_id))
+      relevant = Enum.filter(control_bindings, &binding_references_entity?(&1, entity_id))
 
       if control do
         render_control_bindings(control, relevant, %{entity_id => entity_state})
@@ -106,6 +106,36 @@ defmodule Loupey.Bindings.LayoutEngine do
       end
     end)
   end
+
+  defp binding_references_entity?(binding, entity_id) do
+    # Check direct entity_id (backward compat)
+    binding.entity_id == entity_id ||
+      # Check output rule expressions for state_of("entity_id")
+      Enum.any?(binding.output_rules, fn rule ->
+        references_entity_in_rule?(rule, entity_id)
+      end)
+  end
+
+  defp references_entity_in_rule?(rule, entity_id) do
+    when_refs = if is_binary(rule.when), do: Expression.extract_entity_refs(rule.when), else: []
+    instr_refs = extract_instruction_refs(rule.instructions)
+    entity_id in (when_refs ++ instr_refs)
+  end
+
+  defp extract_instruction_refs(instructions) when is_map(instructions) do
+    instructions
+    |> Map.values()
+    |> Enum.flat_map(fn
+      v when is_binary(v) -> Expression.extract_entity_refs(v)
+      %{} = m -> m |> Map.values() |> Enum.flat_map(&extract_instruction_refs_value/1)
+      _ -> []
+    end)
+  end
+
+  defp extract_instruction_refs(_), do: []
+
+  defp extract_instruction_refs_value(v) when is_binary(v), do: Expression.extract_entity_refs(v)
+  defp extract_instruction_refs_value(_), do: []
 
   # -- Internals --
 

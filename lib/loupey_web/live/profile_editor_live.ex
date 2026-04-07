@@ -117,17 +117,6 @@ defmodule LoupeyWeb.ProfileEditorLive do
                 />
               </div>
 
-              <%!-- Entity ID --%>
-              <div class="mb-3">
-                <label class="block text-xs text-gray-400 mb-1">Entity ID</label>
-                <.live_component
-                  module={LoupeyWeb.EntityAutocomplete}
-                  id="binding_entity"
-                  value={@entity_search}
-                  name="entity_id"
-                />
-              </div>
-
               <%!-- Editor mode tabs --%>
               <.editor_tabs mode={@editor_mode} />
 
@@ -139,6 +128,7 @@ defmodule LoupeyWeb.ProfileEditorLive do
                   yaml={@binding_yaml}
                   entity_id={@entity_search}
                   editing={@editing_binding != nil and @editing_binding.id != nil}
+                  control={@selected_control && Loupey.Device.Spec.find_control(@spec, @selected_control)}
                 />
               </div>
 
@@ -363,6 +353,12 @@ defmodule LoupeyWeb.ProfileEditorLive do
     {:noreply, assign(socket, entity_search: entity_id)}
   end
 
+  def handle_info({:entity_selected, "action_target_" <> indices, entity_id}, socket) do
+    # Forward to the binding form component via a message
+    send_update(LoupeyWeb.BindingFormComponent, id: "binding_form", action_target_selected: {indices, entity_id})
+    {:noreply, socket}
+  end
+
   def handle_info({:blueprint_applied, yaml, entity_id}, socket) do
     entity_search = if entity_id != "", do: entity_id, else: socket.assigns.entity_search
 
@@ -377,6 +373,16 @@ defmodule LoupeyWeb.ProfileEditorLive do
   def handle_info({:save_binding_yaml, yaml}, socket) do
     socket = assign(socket, binding_yaml: yaml)
     {:noreply, elem(do_save_binding(yaml, socket), 1)}
+  end
+
+  def handle_info({:condition_built, "output_condition_" <> idx_str, expr}, socket) do
+    send_update(LoupeyWeb.BindingFormComponent, id: "binding_form", condition_update: {idx_str, expr})
+    {:noreply, socket}
+  end
+
+  def handle_info({:condition_built, "text_insert_" <> idx_str, expr}, socket) do
+    send_update(LoupeyWeb.BindingFormComponent, id: "binding_form", text_insert: {idx_str, expr})
+    {:noreply, socket}
   end
 
   def handle_info(:delete_binding, socket) do

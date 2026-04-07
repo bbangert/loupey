@@ -5,7 +5,7 @@ defmodule LoupeyWeb.SettingsLive do
 
   @impl true
   def mount(_params, _session, socket) do
-    ha_connected = Process.whereis(Loupey.HA.Connection) != nil
+    ha_connected = Loupey.HA.connected?()
     saved_config = Settings.get_active_ha_config()
 
     {:ok,

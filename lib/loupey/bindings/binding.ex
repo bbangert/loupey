@@ -1,11 +1,14 @@
 defmodule Loupey.Bindings.Binding do
   @moduledoc """
-  Ties a control to an HA entity with input and output rules.
+  Connects a physical control to behavior via input and output rules.
 
-  A binding connects a physical control to behavior:
-  - `entity_id` — the HA entity this binding watches/controls (nil for layout switches)
-  - `input_rules` — what happens when the control is activated
-  - `output_rules` — how the control's display/LED reacts to state changes
+  - `input_rules` — what happens when the control is activated.
+    Each rule can fire multiple actions with explicit targets.
+  - `output_rules` — how the control's display/LED reacts to state changes.
+    Rules use `state_of("entity_id")` to access any entity's state.
+  - `entity_id` — (deprecated, backward compat) legacy single-entity reference.
+    New bindings should use `state_of()` in expressions and explicit targets
+    in actions instead.
   """
 
   alias Loupey.Bindings.{InputRule, OutputRule}

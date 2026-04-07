@@ -13,7 +13,7 @@ defmodule Loupey.Bindings.Engine do
   use GenServer
   require Logger
 
-  alias Loupey.Bindings.{LayoutEngine, Profile, Rules}
+  alias Loupey.Bindings.{Expression, LayoutEngine, Profile, Rules}
   alias Loupey.Device.{Control, Spec}
   alias Loupey.DeviceServer
   alias Loupey.Events.TouchEvent
@@ -37,12 +37,15 @@ defmodule Loupey.Bindings.Engine do
   # -- Public API --
 
   @doc """
-  Start a binding engine for a device with the given profile.
+  Start a binding engine for a device.
+
+  The engine loads the active profile from the database on init,
+  so it always has the current state — even after a crash restart.
+  An optional `:profile` can be passed to skip the DB lookup on first start.
   """
   def start_link(opts) do
     device_id = Keyword.fetch!(opts, :device_id)
-    profile = Keyword.fetch!(opts, :profile)
-    GenServer.start_link(__MODULE__, {device_id, profile}, name: via_tuple(device_id))
+    GenServer.start_link(__MODULE__, {device_id, opts[:profile]}, name: via_tuple(device_id))
   end
 
   @doc """
@@ -67,15 +70,22 @@ defmodule Loupey.Bindings.Engine do
   # -- GenServer callbacks --
 
   @impl true
-  def init({device_id, profile}) do
+  def init({device_id, initial_profile}) do
     spec = DeviceServer.get_spec(device_id)
 
     # Subscribe to device input events
     Loupey.Devices.subscribe(device_id)
 
-    # Subscribe to HA state changes for all entities referenced in the profile
-    entity_ids = collect_entity_ids(profile)
-    entity_states = subscribe_and_fetch(entity_ids)
+    # Load profile: use provided profile, or load from DB (for crash recovery)
+    profile = initial_profile || load_profile_from_db()
+
+    {entity_states, profile} =
+      if profile do
+        entity_ids = collect_entity_ids(profile)
+        {subscribe_and_fetch(entity_ids), profile}
+      else
+        {%{}, nil}
+      end
 
     state = %State{
       device_id: device_id,
@@ -84,8 +94,8 @@ defmodule Loupey.Bindings.Engine do
       entity_states: entity_states
     }
 
-    # Initial render of active layout
-    send(self(), :render_active_layout)
+    # Initial render of active layout (if we have a profile)
+    if profile, do: send(self(), :render_active_layout)
 
     {:ok, state}
   end
@@ -161,26 +171,34 @@ defmodule Loupey.Bindings.Engine do
   defp maybe_flush_pending_touch(_event, state), do: state
 
   defp process_binding_input(binding, event, state, control) do
+    # For backward compat: if binding has entity_id, pass its state
     entity_state =
       if binding.entity_id, do: Map.get(state.entity_states, binding.entity_id)
 
     case Rules.match_input(event, binding, entity_state, control) do
-      {:action, "switch_layout", %{layout: layout_id}} ->
-        do_switch_layout_async(state.device_id, layout_id)
-        state
-
-      {:action, "call_service", params} ->
-        if touch_move?(event) do
-          debounce_touch_move(params, state)
-        else
-          execute_service_call(params)
-          state
-        end
+      {:actions, action_list} ->
+        Enum.reduce(action_list, state, &execute_action(&1, event, &2))
 
       :no_match ->
         state
     end
   end
+
+  defp execute_action(%{action: "switch_layout", layout: layout_id}, _event, state) do
+    do_switch_layout_async(state.device_id, to_string(layout_id))
+    state
+  end
+
+  defp execute_action(%{action: "call_service"} = params, event, state) do
+    if touch_move?(event) do
+      debounce_touch_move(params, state)
+    else
+      execute_service_call(params)
+      state
+    end
+  end
+
+  defp execute_action(_action, _event, state), do: state
 
   defp touch_move?(%TouchEvent{action: :move}), do: true
   defp touch_move?(_), do: false
@@ -230,6 +248,8 @@ defmodule Loupey.Bindings.Engine do
   end
 
   # -- Helpers --
+
+  defp get_active_layout(%State{profile: nil}), do: nil
 
   defp get_active_layout(%State{profile: profile}) do
     Map.get(profile.layouts, profile.active_layout)
@@ -281,17 +301,65 @@ defmodule Loupey.Bindings.Engine do
   end
 
   defp collect_entity_ids(%Profile{layouts: layouts}) do
-    layouts
-    |> Map.values()
-    |> Enum.flat_map(fn layout ->
-      layout.bindings
+    all_bindings =
+      layouts
       |> Map.values()
-      |> List.flatten()
-      |> Enum.map(& &1.entity_id)
-    end)
-    |> Enum.reject(&is_nil/1)
+      |> Enum.flat_map(fn layout -> layout.bindings |> Map.values() |> List.flatten() end)
+
+    # From binding entity_id (backward compat)
+    binding_entities = all_bindings |> Enum.map(& &1.entity_id) |> Enum.reject(&is_nil/1)
+
+    # From input rule action targets
+    action_targets =
+      all_bindings
+      |> Enum.flat_map(& &1.input_rules)
+      |> Enum.flat_map(& &1.actions)
+      |> Enum.map(&Map.get(&1, :target))
+      |> Enum.reject(&is_nil/1)
+      |> Enum.filter(&is_binary/1)
+
+    # From state_of()/attr_of() in expressions (output rules + input rule conditions)
+    expression_entities =
+      all_bindings
+      |> Enum.flat_map(&extract_expression_entities/1)
+
+    (binding_entities ++ action_targets ++ expression_entities)
     |> Enum.uniq()
   end
+
+  defp extract_expression_entities(binding) do
+    output_exprs =
+      binding.output_rules
+      |> Enum.flat_map(fn rule ->
+        when_refs = extract_refs_from_when(rule.when)
+        instr_refs = extract_refs_from_instructions(rule.instructions)
+        when_refs ++ instr_refs
+      end)
+
+    input_exprs =
+      binding.input_rules
+      |> Enum.flat_map(fn rule ->
+        extract_refs_from_when(rule.when)
+      end)
+
+    output_exprs ++ input_exprs
+  end
+
+  defp extract_refs_from_when(nil), do: []
+  defp extract_refs_from_when(true), do: []
+  defp extract_refs_from_when(expr) when is_binary(expr), do: Expression.extract_entity_refs(expr)
+
+  defp extract_refs_from_instructions(instructions) when is_map(instructions) do
+    instructions
+    |> Map.values()
+    |> Enum.flat_map(&extract_refs_from_value/1)
+  end
+
+  defp extract_refs_from_instructions(_), do: []
+
+  defp extract_refs_from_value(value) when is_binary(value), do: Expression.extract_entity_refs(value)
+  defp extract_refs_from_value(%{} = map), do: map |> Map.values() |> Enum.flat_map(&extract_refs_from_value/1)
+  defp extract_refs_from_value(_), do: []
 
   defp subscribe_and_fetch(entity_ids) do
     Map.new(entity_ids, fn entity_id ->
@@ -299,5 +367,12 @@ defmodule Loupey.Bindings.Engine do
       state = HA.get_state(entity_id)
       {entity_id, state}
     end)
+  end
+
+  defp load_profile_from_db do
+    case Loupey.Profiles.get_active_profile() do
+      nil -> nil
+      db_profile -> Loupey.Profiles.to_core_profile(db_profile)
+    end
   end
 end

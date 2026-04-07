@@ -92,7 +92,8 @@ defmodule Loupey.Bindings.YamlParser do
 
     input_rules =
       Enum.map(blueprint.input_rules, fn rule ->
-        %{rule | params: resolve_inputs(rule.params, input_values)}
+        actions = Enum.map(rule.actions, &resolve_inputs(&1, input_values))
+        %{rule | actions: actions}
       end)
 
     output_rules =
@@ -162,13 +163,26 @@ defmodule Loupey.Bindings.YamlParser do
 
   defp parse_input_rule(rule) do
     trigger = parse_trigger(rule["on"])
-    params = Map.drop(rule, ["on", "when", "action"])
+
+    actions =
+      cond do
+        # New format: actions list
+        is_list(rule["actions"]) ->
+          Enum.map(rule["actions"], &atomize_keys/1)
+
+        # Old format: single action with params
+        rule["action"] ->
+          params = Map.drop(rule, ["on", "when", "action"])
+          [Map.merge(%{action: rule["action"]}, atomize_keys(params))]
+
+        true ->
+          []
+      end
 
     %InputRule{
       on: trigger,
       when: rule["when"],
-      action: rule["action"],
-      params: atomize_keys(params)
+      actions: actions
     }
   end
 

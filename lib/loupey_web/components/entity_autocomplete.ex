@@ -42,6 +42,7 @@ defmodule LoupeyWeb.EntityAutocomplete do
      |> assign(:parent_value, new_value)
      |> assign(:input_name, assigns[:name] || "entity_id")
      |> assign(:placeholder, assigns[:placeholder] || "Start typing... e.g. light.")
+     |> assign(:domain_filter, assigns[:domain] || socket.assigns[:domain_filter])
      |> assign(:search, search)
      |> assign(:matches, socket.assigns[:matches] || [])
      |> assign(:show_dropdown, socket.assigns[:show_dropdown] || false)}
@@ -85,12 +86,12 @@ defmodule LoupeyWeb.EntityAutocomplete do
 
   @impl true
   def handle_event("search", %{"value" => query}, socket) do
-    matches = search_entities(query)
+    matches = search_entities(query, socket.assigns.domain_filter)
     {:noreply, assign(socket, search: query, matches: matches, show_dropdown: matches != [])}
   end
 
   def handle_event("focus", _params, socket) do
-    matches = search_entities(socket.assigns.search)
+    matches = search_entities(socket.assigns.search, socket.assigns.domain_filter)
     {:noreply, assign(socket, show_dropdown: matches != [], matches: matches)}
   end
 
@@ -104,9 +105,10 @@ defmodule LoupeyWeb.EntityAutocomplete do
     {:noreply, assign(socket, search: entity_id, matches: [], show_dropdown: false)}
   end
 
-  defp search_entities(query) when byte_size(query) >= 1 do
+  defp search_entities(query, domain_filter) when byte_size(query) >= 1 do
     Loupey.HA.get_all_states()
     |> Enum.map(& &1.entity_id)
+    |> filter_by_domain(domain_filter)
     |> Enum.filter(&String.contains?(&1, query))
     |> Enum.sort()
     |> Enum.take(20)
@@ -114,5 +116,16 @@ defmodule LoupeyWeb.EntityAutocomplete do
     _ -> []
   end
 
-  defp search_entities(_), do: []
+  defp search_entities(_, domain_filter) do
+    # If no query but there's a domain filter, show all entities in that domain
+    if domain_filter && domain_filter != "" do
+      search_entities(domain_filter <> ".", domain_filter)
+    else
+      []
+    end
+  end
+
+  defp filter_by_domain(ids, nil), do: ids
+  defp filter_by_domain(ids, ""), do: ids
+  defp filter_by_domain(ids, domain), do: Enum.filter(ids, &String.starts_with?(&1, domain <> "."))
 end

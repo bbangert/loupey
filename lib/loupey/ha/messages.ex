@@ -36,6 +36,7 @@ defmodule Loupey.HA.Messages do
           | {:state_changed, integer(), EntityState.t(), EntityState.t() | nil}
           | {:event, integer(), String.t(), map()}
           | {:states, integer(), [EntityState.t()]}
+          | {:services, integer(), %{String.t() => [String.t()]}}
           | {:unknown, map()}
 
   @doc """
@@ -83,14 +84,24 @@ defmodule Loupey.HA.Messages do
   defp parse_decoded(%{"type" => "event", "id" => id, "event" => %{"event_type" => type} = event}),
     do: {:event, id, type, event}
 
-  defp parse_decoded(%{"type" => "result", "id" => id, "success" => success, "result" => result})
+  defp parse_decoded(%{"type" => "result", "id" => id, "success" => true, "result" => result})
        when is_list(result) do
-    # Check if this is a get_states response (list of state objects)
-    if Enum.all?(result, &is_map(&1) && Map.has_key?(&1, "entity_id")) do
+    if Enum.all?(result, &(is_map(&1) && Map.has_key?(&1, "entity_id"))) do
       states = Enum.map(result, fn s -> parse_state(s["entity_id"], s) end)
       {:states, id, states}
     else
-      {:result, id, success, result}
+      {:result, id, true, result}
+    end
+  end
+
+  defp parse_decoded(%{"type" => "result", "id" => id, "success" => true, "result" => result})
+       when is_map(result) do
+    # Check if this is a get_services response (map of domain => services)
+    if services_result?(result) do
+      services = parse_services(result)
+      {:services, id, services}
+    else
+      {:result, id, true, result}
     end
   end
 
@@ -138,6 +149,14 @@ defmodule Loupey.HA.Messages do
   end
 
   @doc """
+  Encode a get_services message to fetch all available service domains and services.
+  """
+  @spec encode_get_services(integer()) :: String.t()
+  def encode_get_services(id) do
+    Jason.encode!(%{id: id, type: "get_services"})
+  end
+
+  @doc """
   Encode a service call message.
   """
   @spec encode_service_call(integer(), ServiceCall.t()) :: String.t()
@@ -153,6 +172,29 @@ defmodule Loupey.HA.Messages do
     msg = if call.service_data != %{}, do: Map.put(msg, :service_data, call.service_data), else: msg
 
     Jason.encode!(msg)
+  end
+
+  # -- Services parsing --
+
+  defp services_result?(result) when is_map(result) do
+    # Services result has domain keys mapping to maps of service names
+    case Enum.take(result, 1) do
+      [{_domain, services}] when is_map(services) ->
+        case Enum.take(services, 1) do
+          [{_name, detail}] when is_map(detail) -> true
+          _ -> false
+        end
+
+      _ ->
+        false
+    end
+  end
+
+  defp parse_services(result) do
+    Map.new(result, fn {domain, services} ->
+      service_names = Map.keys(services) |> Enum.sort()
+      {domain, service_names}
+    end)
   end
 
   # -- State diffing --

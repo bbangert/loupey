@@ -24,7 +24,21 @@ defmodule Loupey.HA do
   """
   @spec connect(Config.t()) :: {:ok, pid()} | {:error, term()}
   def connect(%Config{} = config) do
-    Loupey.HA.Supervisor.start_link(config)
+    Loupey.HA.Supervisor.connect(config)
+  end
+
+  @doc """
+  Disconnect from Home Assistant.
+  """
+  def disconnect do
+    Loupey.HA.Supervisor.disconnect()
+  end
+
+  @doc """
+  Check if HA is connected.
+  """
+  def connected? do
+    Loupey.HA.Supervisor.connected?()
   end
 
   @doc """
@@ -67,6 +81,19 @@ defmodule Loupey.HA do
   def get_domain(domain) do
     StateCache.get_by_domain(domain)
   end
+
+  @doc """
+  Get all available service domains and their services.
+  Returns `%{"light" => ["toggle", "turn_off", "turn_on"], ...}`.
+  """
+  @spec get_services() :: %{String.t() => [String.t()]}
+  def get_services, do: StateCache.get_services()
+
+  @doc """
+  Get services for a specific domain.
+  """
+  @spec get_domain_services(String.t()) :: [String.t()]
+  def get_domain_services(domain), do: StateCache.get_services(domain)
 
   @doc """
   Subscribe to state changes for a specific entity.

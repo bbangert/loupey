@@ -5,7 +5,10 @@ config :loupey,
 
 config :loupey, Loupey.Repo,
   database: Path.expand("../loupey_#{config_env()}.db", __DIR__),
-  pool_size: 5
+  pool_size: 5,
+  journal_mode: :wal,
+  cache_size: -64000,
+  temp_store: :memory
 
 config :loupey, LoupeyWeb.Endpoint,
   url: [host: "localhost"],

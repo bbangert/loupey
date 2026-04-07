@@ -30,7 +30,8 @@ defmodule Loupey.HA.Connection do
       pending: %{},
       authenticated: false,
       subscribe_id: nil,
-      get_states_id: nil
+      get_states_id: nil,
+      get_services_id: nil
     ]
   end
 
@@ -101,6 +102,17 @@ defmodule Loupey.HA.Connection do
   defp handle_message({:states, id, entity_states}, %{get_states_id: id} = state) do
     Logger.info("HA: received #{length(entity_states)} entity states")
     dispatch(state, {:initial_states, entity_states})
+
+    # Fetch services, then subscribe to state changes
+    {state, services_frame} = send_msg(state, &Messages.encode_get_services/1)
+    {:reply, services_frame, %{state | get_services_id: state.next_id - 1}}
+  end
+
+  defp handle_message({:services, id, services}, %{get_services_id: id} = state) do
+    Logger.info("HA: received #{map_size(services)} service domains")
+    dispatch(state, {:services, services})
+
+    # Now subscribe to state_changed events
     {state, sub_frame} = send_msg(state, &Messages.encode_subscribe/1)
     {:reply, sub_frame, %{state | subscribe_id: state.next_id - 1}}
   end

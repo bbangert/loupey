@@ -46,11 +46,29 @@ defmodule LoupeyWeb.BindingFormComponent do
     new_yaml = assigns[:yaml] || prev_yaml || ""
     yaml_changed = prev_yaml != new_yaml
 
+    # Handle messages forwarded from parent via send_update
     form_data =
-      if first_mount or yaml_changed do
-        parse_yaml_to_form(new_yaml)
-      else
-        socket.assigns.form_data
+      cond do
+        assigns[:action_target_selected] ->
+          {indices, entity_id} = assigns[:action_target_selected]
+          fd = socket.assigns[:form_data] || parse_yaml_to_form(new_yaml)
+          apply_action_target(fd, indices, entity_id)
+
+        assigns[:condition_update] ->
+          {idx_str, expr} = assigns[:condition_update]
+          fd = socket.assigns[:form_data] || parse_yaml_to_form(new_yaml)
+          apply_condition_update(fd, idx_str, expr)
+
+        assigns[:text_insert] ->
+          {idx_str, expr} = assigns[:text_insert]
+          fd = socket.assigns[:form_data] || parse_yaml_to_form(new_yaml)
+          apply_text_insert(fd, idx_str, expr)
+
+        first_mount or yaml_changed ->
+          parse_yaml_to_form(new_yaml)
+
+        true ->
+          socket.assigns.form_data
       end
 
     socket =
@@ -60,6 +78,8 @@ defmodule LoupeyWeb.BindingFormComponent do
       |> assign(:editing, assigns[:editing] || false)
       |> assign(:icon_browser_idx, socket.assigns[:icon_browser_idx])
       |> assign(:icon_files, socket.assigns[:icon_files] || [])
+      |> assign(:control, assigns[:control] || socket.assigns[:control])
+      |> assign_ha_services(first_mount)
       |> assign(
         form_data: form_data,
         trigger_options: @trigger_options,
@@ -99,98 +119,126 @@ defmodule LoupeyWeb.BindingFormComponent do
               Remove
             </button>
           </div>
-          <div class="grid grid-cols-2 gap-2">
+          <%!-- Trigger + Condition --%>
+          <form phx-change="update_input_rule_form" phx-target={@myself} class="grid grid-cols-2 gap-2">
+            <input type="hidden" name="idx" value={idx} />
             <div>
               <label class="text-[10px] text-gray-500">Trigger</label>
               <select
-                phx-change="update_input_rule"
-                phx-target={@myself}
-                name={"input_rule[#{idx}][on]"}
+                name="on"
                 class="w-full bg-gray-700 border border-gray-600 rounded px-1.5 py-1 text-xs text-white"
               >
-                <option :for={{label, val} <- @trigger_options} value={val} selected={val == rule.on}>
+                <option :for={{label, val} <- trigger_options_for(@control)} value={val} selected={val == rule.on}>
                   {label}
                 </option>
               </select>
             </div>
             <div>
-              <label class="text-[10px] text-gray-500">Action</label>
-              <select
-                phx-change="update_input_rule"
+              <label class="text-[10px] text-gray-500">Condition (optional)</label>
+              <input
+                type="text"
+                name="when"
+                value={rule[:when] || ""}
+                phx-debounce="300"
+                placeholder="e.g. state_of(...) == ..."
+                class="w-full bg-gray-700 border border-gray-600 rounded px-1.5 py-1 text-xs text-white font-mono"
+              />
+            </div>
+          </form>
+          <%!-- Actions --%>
+          <div class="ml-2 border-l-2 border-gray-700 pl-2 space-y-2">
+            <div class="flex items-center gap-2">
+              <span class="text-[9px] text-gray-500 uppercase">Actions</span>
+              <button
+                phx-click="add_action"
                 phx-target={@myself}
-                name={"input_rule[#{idx}][action]"}
-                class="w-full bg-gray-700 border border-gray-600 rounded px-1.5 py-1 text-xs text-white"
+                phx-value-rule-idx={idx}
+                class="text-[9px] bg-gray-700 hover:bg-gray-600 text-white px-1.5 py-0.5 rounded"
               >
-                <option :for={{label, val} <- @action_options} value={val} selected={val == rule.action}>
-                  {label}
-                </option>
-              </select>
+                + Add
+              </button>
             </div>
-          </div>
-          <%!-- Service call fields --%>
-          <div :if={rule.action == "call_service"} class="grid grid-cols-2 gap-2">
-            <div>
-              <label class="text-[10px] text-gray-500">Domain</label>
-              <input
-                type="text"
-                phx-change="update_input_rule" phx-debounce="300"
-                phx-target={@myself}
-                name={"input_rule[#{idx}][domain]"}
-                value={rule.domain}
-                placeholder="light"
-                class="w-full bg-gray-700 border border-gray-600 rounded px-1.5 py-1 text-xs text-white"
-              />
-            </div>
-            <div>
-              <label class="text-[10px] text-gray-500">Service</label>
-              <input
-                type="text"
-                phx-change="update_input_rule" phx-debounce="300"
-                phx-target={@myself}
-                name={"input_rule[#{idx}][service]"}
-                value={rule.service}
-                placeholder="toggle"
-                class="w-full bg-gray-700 border border-gray-600 rounded px-1.5 py-1 text-xs text-white"
-              />
-            </div>
-          </div>
-          <%!-- Service data --%>
-          <div :if={rule.action == "call_service"}>
-            <label class="text-[10px] text-gray-500">Service Data (YAML, optional)</label>
-            <textarea
-              phx-change="update_input_rule" phx-debounce="300"
+            <form
+              :for={{action, aidx} <- Enum.with_index(rule.actions)}
+              phx-change="update_action_form"
               phx-target={@myself}
-              name={"input_rule[#{idx}][service_data]"}
-              rows="2"
-              placeholder={"brightness: 128\ncolor_temp: 400"}
-              class="w-full bg-gray-700 border border-gray-600 rounded px-1.5 py-1 text-xs text-white font-mono resize-y"
-            >{format_service_data(rule[:service_data])}</textarea>
-          </div>
-          <%!-- Condition --%>
-          <div>
-            <label class="text-[10px] text-gray-500">Condition (optional)</label>
-            <input
-              type="text"
-              phx-change="update_input_rule" phx-debounce="300"
-              phx-target={@myself}
-              name={"input_rule[#{idx}][when]"}
-              value={rule[:when] || ""}
-              placeholder={~s(e.g. state == "on")}
-              class="w-full bg-gray-700 border border-gray-600 rounded px-1.5 py-1 text-xs text-white font-mono"
-            />
-          </div>
-          <%!-- Switch layout field --%>
-          <div :if={rule.action == "switch_layout"}>
-            <label class="text-[10px] text-gray-500">Layout name</label>
-            <input
-              type="text"
-              phx-change="update_input_rule" phx-debounce="300"
-              phx-target={@myself}
-              name={"input_rule[#{idx}][layout]"}
-              value={rule[:layout] || ""}
-              placeholder="media"
-              class="w-full bg-gray-700 border border-gray-600 rounded px-1.5 py-1 text-xs text-white"
-            />
+              class="bg-gray-800 rounded p-1.5 space-y-1.5"
+            >
+              <input type="hidden" name="rule_idx" value={idx} />
+              <input type="hidden" name="action_idx" value={aidx} />
+              <div class="flex items-center justify-between">
+                <select
+                  name="action_type"
+                  class="bg-gray-700 border border-gray-600 rounded px-1 py-0.5 text-[10px] text-white"
+                >
+                  <option :for={{label, val} <- @action_options} value={val} selected={val == action[:action]}>
+                    {label}
+                  </option>
+                </select>
+                <button
+                  type="button"
+                  phx-click="remove_action"
+                  phx-target={@myself}
+                  phx-value-rule-idx={idx}
+                  phx-value-action-idx={aidx}
+                  class="text-[9px] text-red-400 hover:text-red-300"
+                >
+                  ✕
+                </button>
+              </div>
+              <%!-- Service call fields --%>
+              <div :if={action[:action] == "call_service"} class="grid grid-cols-2 gap-1">
+                <div>
+                  <select
+                    name="domain"
+                    class="w-full bg-gray-700 border border-gray-600 rounded px-1 py-0.5 text-[10px] text-white"
+                  >
+                    <option value="">Domain...</option>
+                    <option :for={d <- @ha_domains} value={d} selected={d == action[:domain]}>{d}</option>
+                  </select>
+                </div>
+                <div>
+                  <select
+                    name="service"
+                    class="w-full bg-gray-700 border border-gray-600 rounded px-1 py-0.5 text-[10px] text-white"
+                  >
+                    <option value="">Service...</option>
+                    <option :for={s <- services_for_domain(action[:domain], @ha_services)} value={s} selected={s == action[:service]}>{s}</option>
+                  </select>
+                </div>
+              </div>
+              <div :if={action[:action] == "call_service"}>
+                <label class="text-[9px] text-gray-500">Target entity</label>
+                <.live_component
+                  module={LoupeyWeb.EntityAutocomplete}
+                  id={"action_target_#{idx}_#{aidx}"}
+                  value={action[:target] || ""}
+                  name="target"
+                  domain={action[:domain]}
+                  placeholder={"entity_id (e.g. #{action[:domain] || "light"}.office)"}
+                />
+              </div>
+              <div :if={action[:action] == "call_service"}>
+                <textarea
+                  name="service_data"
+                  rows="1"
+                  phx-debounce="300"
+                  placeholder="key: value (one per line)"
+                  class="w-full bg-gray-700 border border-gray-600 rounded px-1 py-0.5 text-[10px] text-white font-mono resize-y"
+                >{format_service_data(action[:service_data])}</textarea>
+              </div>
+              <%!-- Switch layout --%>
+              <div :if={action[:action] == "switch_layout"}>
+                <input
+                  type="text"
+                  name="layout"
+                  value={action[:layout] || ""}
+                  phx-debounce="300"
+                  placeholder="Layout name"
+                  class="w-full bg-gray-700 border border-gray-600 rounded px-1 py-0.5 text-[10px] text-white"
+                />
+              </div>
+            </form>
           </div>
         </div>
       </div>
@@ -227,17 +275,13 @@ defmodule LoupeyWeb.BindingFormComponent do
             </button>
           </div>
           <%!-- Condition --%>
-          <div>
-            <label class="text-[10px] text-gray-500">Condition</label>
-            <input
-              type="text"
-              name="when"
-              value={format_when(rule[:when])}
-              phx-debounce="300"
-              placeholder={~s(e.g. state == "on"  or  true)}
-              class="w-full bg-gray-700 border border-gray-600 rounded px-1.5 py-1 text-xs text-white font-mono"
-            />
-          </div>
+          <input type="hidden" name="when" value={format_when(rule[:when])} />
+          <.live_component
+            module={LoupeyWeb.ConditionBuilder}
+            id={"output_condition_#{idx}"}
+            value={format_when(rule[:when])}
+            mode={:condition}
+          />
           <div class="grid grid-cols-2 gap-2">
             <div>
               <label class="text-[10px] text-gray-500">Background</label>
@@ -346,9 +390,14 @@ defmodule LoupeyWeb.BindingFormComponent do
                 name="text_content"
                 rows="2"
                 phx-debounce="300"
-                placeholder="ON or {{ state }}°F"
+                placeholder="Text or use Insert below"
                 class="w-full bg-gray-700 border border-gray-600 rounded px-1.5 py-1 text-xs text-white font-mono resize-y"
               >{get_text_content(rule[:text]) || ""}</textarea>
+              <.live_component
+                module={LoupeyWeb.ConditionBuilder}
+                id={"text_insert_#{idx}"}
+                mode={:insert}
+              />
             </div>
             <div>
               <label class="text-[10px] text-gray-500">Text color</label>
@@ -398,7 +447,8 @@ defmodule LoupeyWeb.BindingFormComponent do
   @impl true
   def handle_event("add_input_rule", _params, socket) do
     form_data = socket.assigns.form_data
-    new_rule = %{on: "press", action: "call_service", domain: "", service: ""}
+    default_trigger = socket.assigns[:control] |> trigger_options_for() |> hd() |> elem(1)
+    new_rule = %{on: default_trigger, actions: [%{action: "call_service", domain: "", service: "", target: ""}]}
     form_data = %{form_data | input_rules: form_data.input_rules ++ [new_rule]}
     {:noreply, assign(socket, form_data: form_data)}
   end
@@ -409,22 +459,72 @@ defmodule LoupeyWeb.BindingFormComponent do
     {:noreply, assign(socket, form_data: %{form_data | input_rules: rules})}
   end
 
-  def handle_event("update_input_rule", params, socket) do
+  def handle_event("update_input_rule_form", params, socket) do
+    idx = String.to_integer(params["idx"])
     form_data = socket.assigns.form_data
 
-    case extract_rule_param(params, "input_rule") do
-      {:ok, idx, :service_data, value} ->
-        rules = List.update_at(form_data.input_rules, idx, &Map.put(&1, :service_data, parse_service_data(value)))
-        {:noreply, assign(socket, form_data: %{form_data | input_rules: rules})}
+    rules =
+      List.update_at(form_data.input_rules, idx, fn rule ->
+        rule
+        |> Map.put(:on, params["on"] || rule[:on])
+        |> Map.put(:when, params["when"])
+      end)
 
-      {:ok, idx, field, value} ->
-        rules = List.update_at(form_data.input_rules, idx, &Map.put(&1, field, value))
-        {:noreply, assign(socket, form_data: %{form_data | input_rules: rules})}
-
-      :error ->
-        {:noreply, socket}
-    end
+    {:noreply, assign(socket, form_data: %{form_data | input_rules: rules})}
   end
+
+  def handle_event("add_action", %{"rule-idx" => idx_str}, socket) do
+    idx = String.to_integer(idx_str)
+    form_data = socket.assigns.form_data
+    new_action = %{action: "call_service", domain: "", service: "", target: ""}
+
+    rules =
+      List.update_at(form_data.input_rules, idx, fn rule ->
+        Map.update(rule, :actions, [new_action], &(&1 ++ [new_action]))
+      end)
+
+    {:noreply, assign(socket, form_data: %{form_data | input_rules: rules})}
+  end
+
+  def handle_event("remove_action", %{"rule-idx" => ridx, "action-idx" => aidx}, socket) do
+    ridx = String.to_integer(ridx)
+    aidx = String.to_integer(aidx)
+    form_data = socket.assigns.form_data
+
+    rules =
+      List.update_at(form_data.input_rules, ridx, fn rule ->
+        Map.update(rule, :actions, [], &List.delete_at(&1, aidx))
+      end)
+
+    {:noreply, assign(socket, form_data: %{form_data | input_rules: rules})}
+  end
+
+  def handle_event("update_action_form", params, socket) do
+    ridx = String.to_integer(params["rule_idx"])
+    aidx = String.to_integer(params["action_idx"])
+    form_data = socket.assigns.form_data
+
+    rules =
+      List.update_at(form_data.input_rules, ridx, fn rule ->
+        actions =
+          List.update_at(rule.actions, aidx, fn action ->
+            action
+            |> Map.put(:action, params["action_type"] || action[:action])
+            |> Map.put(:domain, params["domain"] || action[:domain])
+            |> Map.put(:service, params["service"] || action[:service])
+            |> Map.put(:target, params["target"] || action[:target])
+            |> Map.put(:layout, params["layout"] || action[:layout])
+            |> update_action_service_data(params["service_data"])
+          end)
+
+        %{rule | actions: actions}
+      end)
+
+    {:noreply, assign(socket, form_data: %{form_data | input_rules: rules})}
+  end
+
+  defp update_action_service_data(action, nil), do: action
+  defp update_action_service_data(action, sd), do: Map.put(action, :service_data, parse_service_data(sd))
 
   def handle_event("add_output_rule", _params, socket) do
     form_data = socket.assigns.form_data
@@ -556,52 +656,80 @@ defmodule LoupeyWeb.BindingFormComponent do
         do: ["entity_id: \"#{entity_id}\""],
         else: []
 
-    parts = parts ++ ["input_rules:"] ++ input_rules_to_yaml(form_data.input_rules, entity_id)
+    parts = parts ++ ["input_rules:"] ++ input_rules_to_yaml(form_data.input_rules)
     parts = parts ++ ["output_rules:"] ++ output_rules_to_yaml(form_data.output_rules)
 
     Enum.join(parts, "\n") <> "\n"
   end
 
-  defp input_rules_to_yaml([], _entity_id), do: ["  []"]
+  defp input_rules_to_yaml([]), do: ["  []"]
 
-  defp input_rules_to_yaml(rules, entity_id) do
-    Enum.flat_map(rules, &input_rule_to_yaml(&1, entity_id))
+  defp input_rules_to_yaml(rules) do
+    Enum.flat_map(rules, &input_rule_to_yaml/1)
   end
 
-  defp input_rule_to_yaml(rule, entity_id) do
-    lines = ["  - on: #{rule.on}"]
-    lines = if rule[:when] && rule[:when] != "", do: lines ++ ["    when: '#{rule[:when]}'"], else: lines
-    lines = lines ++ ["    action: #{rule.action}"]
-    lines = lines ++ input_action_yaml(rule, entity_id)
+  defp input_rule_to_yaml(rule) do
+    lines = ["  - on: #{rule[:on] || rule.on}"]
+    when_val = rule[:when]
+    lines = if when_val && when_val != "", do: lines ++ ["    when: '#{when_val}'"], else: lines
+    lines ++ actions_to_yaml(rule[:actions] || [])
+  end
+
+  defp actions_to_yaml([]), do: []
+
+  defp actions_to_yaml([single]) do
+    # Single action: inline for simpler YAML
+    action_to_yaml_lines(single, "    ")
+  end
+
+  defp actions_to_yaml(actions) do
+    ["    actions:"] ++
+      Enum.flat_map(actions, fn action ->
+        lines = action_to_yaml_lines(action, "          ")
+        case lines do
+          [first | rest] -> ["      - " <> String.trim_leading(first) | rest]
+          [] -> []
+        end
+      end)
+  end
+
+  defp action_to_yaml_lines(action, prefix) do
+    type = action[:action]
+    lines = ["#{prefix}action: #{type}"]
+
+    lines =
+      if type == "call_service" do
+        lines ++
+          if_present("#{prefix}domain: ", action[:domain]) ++
+          if_present("#{prefix}service: ", action[:service]) ++
+          if_present("#{prefix}target: ", action[:target]) ++
+          service_data_to_yaml(action[:service_data], prefix)
+      else
+        lines
+      end
+
+    lines =
+      if type == "switch_layout" && action[:layout] && action[:layout] != "" do
+        lines ++ ["#{prefix}layout: \"#{action[:layout]}\""]
+      else
+        lines
+      end
+
     lines
   end
 
-  defp input_action_yaml(%{action: "call_service"} = rule, entity_id) do
-    if_present("    domain: ", rule[:domain]) ++
-      if_present("    service: ", rule[:service]) ++
-      if(entity_id && entity_id != "", do: ["    target: \"#{entity_id}\""], else: []) ++
-      service_data_to_yaml(rule[:service_data])
-  end
+  defp service_data_to_yaml(nil, _prefix), do: []
+  defp service_data_to_yaml(data, _prefix) when data == %{}, do: []
 
-  defp input_action_yaml(%{action: "switch_layout"} = rule, _entity_id) do
-    if rule[:layout] && rule[:layout] != "",
-      do: ["    layout: \"#{rule[:layout]}\""],
-      else: []
-  end
+  defp service_data_to_yaml(data, prefix) when is_map(data) do
+    lines =
+      Enum.flat_map(data, fn {k, v} ->
+        str = to_string(v)
+        val = if String.starts_with?(str, "{{") or String.starts_with?(str, "#"), do: "\"#{str}\"", else: str
+        ["#{prefix}  #{k}: #{val}"]
+      end)
 
-  defp input_action_yaml(_rule, _entity_id), do: []
-
-  defp service_data_to_yaml(nil), do: []
-  defp service_data_to_yaml(data) when data == %{}, do: []
-
-  defp service_data_to_yaml(data) when is_map(data) do
-    lines = Enum.flat_map(data, fn {k, v} ->
-      str = to_string(v)
-      val = if String.starts_with?(str, "{{") or String.starts_with?(str, "#"), do: "\"#{str}\"", else: str
-      ["      #{k}: #{val}"]
-    end)
-
-    if lines != [], do: ["    service_data:"] ++ lines, else: []
+    if lines != [], do: ["#{prefix}service_data:"] ++ lines, else: []
   end
 
   defp output_rules_to_yaml([]), do: ["  []"]
@@ -681,20 +809,42 @@ defmodule LoupeyWeb.BindingFormComponent do
   end
 
   defp parse_form_input_rules(rules) do
-    Enum.map(rules, fn rule ->
-      base = %{
-        on: rule["on"] || "press",
-        action: rule["action"] || "call_service",
-        domain: rule["domain"] || "",
-        service: rule["service"] || "",
-        when: rule["when"],
-        layout: rule["layout"]
-      }
+    Enum.map(rules, &parse_form_input_rule/1)
+  end
 
-      if is_map(rule["service_data"]) and rule["service_data"] != %{},
-        do: Map.put(base, :service_data, stringify_keys(rule["service_data"])),
-        else: base
-    end)
+  defp parse_form_input_rule(rule) do
+    actions =
+      cond do
+        is_list(rule["actions"]) ->
+          Enum.map(rule["actions"], &parse_form_action/1)
+
+        rule["action"] ->
+          # Old single-action format
+          [parse_form_action(rule)]
+
+        true ->
+          []
+      end
+
+    %{
+      on: rule["on"] || "press",
+      when: rule["when"],
+      actions: actions
+    }
+  end
+
+  defp parse_form_action(action) do
+    base = %{
+      action: action["action"] || "call_service",
+      domain: action["domain"] || "",
+      service: action["service"] || "",
+      target: action["target"] || "",
+      layout: action["layout"] || ""
+    }
+
+    if is_map(action["service_data"]) and action["service_data"] != %{},
+      do: Map.put(base, :service_data, stringify_keys(action["service_data"])),
+      else: base
   end
 
   defp stringify_keys(map) when is_map(map) do
@@ -755,6 +905,19 @@ defmodule LoupeyWeb.BindingFormComponent do
     end
   end
 
+  defp extract_action_param(params) do
+    case params["action"] do
+      nil ->
+        :error
+
+      action_map ->
+        {ridx_str, inner} = Enum.find(action_map, fn {_k, _v} -> true end)
+        {aidx_str, field_map} = Enum.find(inner, fn {_k, _v} -> true end)
+        {field_str, value} = Enum.find(field_map, fn {_k, _v} -> true end)
+        {:ok, String.to_integer(ridx_str), String.to_integer(aidx_str), String.to_atom(field_str), value}
+    end
+  end
+
   defp format_when(true), do: "true"
   defp format_when("true"), do: "true"
   defp format_when(nil), do: "true"
@@ -782,13 +945,96 @@ defmodule LoupeyWeb.BindingFormComponent do
 
   defp parse_service_data(_), do: %{}
 
+  defp assign_ha_services(socket, true) do
+    services = Loupey.HA.get_services()
+    domains = services |> Map.keys() |> Enum.sort()
+
+    socket
+    |> assign(:ha_services, services)
+    |> assign(:ha_domains, domains)
+  end
+
+  defp assign_ha_services(socket, false), do: socket
+
+  defp apply_action_target(form_data, indices_str, entity_id) do
+    case String.split(indices_str, "_") do
+      [ridx_str, aidx_str] ->
+        ridx = String.to_integer(ridx_str)
+        aidx = String.to_integer(aidx_str)
+        domain = entity_id |> String.split(".") |> hd()
+
+        rules =
+          List.update_at(form_data.input_rules, ridx, fn rule ->
+            actions =
+              List.update_at(rule.actions, aidx, fn action ->
+                action = Map.put(action, :target, entity_id)
+
+                # Auto-populate domain if empty
+                if (action[:domain] || "") == "" do
+                  Map.put(action, :domain, domain)
+                else
+                  action
+                end
+              end)
+
+            %{rule | actions: actions}
+          end)
+
+        %{form_data | input_rules: rules}
+
+      _ ->
+        form_data
+    end
+  end
+
+  defp trigger_options_for(nil), do: @trigger_options
+
+  defp trigger_options_for(control) do
+    caps = control.capabilities
+
+    []
+    |> add_if(MapSet.member?(caps, :press), [{"Press", "press"}, {"Release", "release"}])
+    |> add_if(MapSet.member?(caps, :rotate), [{"Rotate CW", "rotate_cw"}, {"Rotate CCW", "rotate_ccw"}])
+    |> add_if(MapSet.member?(caps, :touch), [{"Touch Start", "touch_start"}, {"Touch Move", "touch_move"}, {"Touch End", "touch_end"}])
+  end
+
+  defp add_if(list, true, items), do: list ++ items
+  defp add_if(list, false, _items), do: list
+
+  defp apply_condition_update(form_data, idx_str, expr) do
+    idx = String.to_integer(idx_str)
+
+    rules =
+      List.update_at(form_data.output_rules, idx, fn rule ->
+        Map.put(rule, :when, expr)
+      end)
+
+    %{form_data | output_rules: rules}
+  end
+
+  defp apply_text_insert(form_data, idx_str, expr) do
+    idx = String.to_integer(idx_str)
+
+    rules =
+      List.update_at(form_data.output_rules, idx, fn rule ->
+        text = rule[:text] || %{}
+        existing = text[:content] || ""
+        updated = if existing == "", do: expr, else: existing <> expr
+        Map.put(rule, :text, Map.put(text, :content, updated))
+      end)
+
+    %{form_data | output_rules: rules}
+  end
+
+  defp services_for_domain("", _services), do: []
+  defp services_for_domain(nil, _services), do: []
+  defp services_for_domain(domain, services), do: Map.get(services, domain, [])
+
   defp format_service_data(nil), do: ""
   defp format_service_data(data) when data == %{}, do: ""
 
   defp format_service_data(data) when is_map(data) do
-    data
-    |> Enum.map(fn {k, v} -> "#{k}: #{format_sd_value(v)}" end)
-    |> Enum.join("\n")
+    Enum.map_join(data, "\n", fn {k, v} -> "#{k}: #{format_sd_value(v)}" end)
   end
 
   defp format_service_data(_), do: ""

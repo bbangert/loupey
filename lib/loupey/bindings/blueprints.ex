@@ -83,18 +83,30 @@ defmodule Loupey.Bindings.Blueprints do
     Enum.flat_map(rules, fn rule ->
       lines = ["  - on: #{rule.on}"]
       lines = if rule.when, do: lines ++ ["    when: '#{rule.when}'"], else: lines
-      lines = lines ++ ["    action: #{rule.action}"]
+      lines ++ actions_to_yaml(rule.actions)
+    end)
+  end
 
-      lines ++
-        Enum.flat_map(rule.params, fn
-          {:on, _} -> []
-          {:when, _} -> []
-          {:action, _} -> []
-          {key, %{} = map} ->
-            ["    #{key}:"] ++ Enum.flat_map(map, &nested_yaml_line("      ", &1))
-          {key, value} ->
-            [yaml_value_line("    ", key, value)]
-        end)
+  defp actions_to_yaml([single]) do
+    # Single action: inline for cleaner YAML
+    action_fields_to_yaml(single, "    ")
+  end
+
+  defp actions_to_yaml(actions) do
+    ["    actions:"] ++
+      Enum.flat_map(actions, fn action ->
+        [first_field | rest] = action_fields_to_yaml(action, "        ")
+        ["      - " <> String.trim_leading(first_field)] ++ rest
+      end)
+  end
+
+  defp action_fields_to_yaml(action, prefix) do
+    action
+    |> Enum.flat_map(fn
+      {key, %{} = map} ->
+        ["#{prefix}#{key}:"] ++ Enum.flat_map(map, &nested_yaml_line("#{prefix}  ", &1))
+      {key, value} ->
+        [yaml_value_line(prefix, key, value)]
     end)
   end
 

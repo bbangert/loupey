@@ -22,20 +22,36 @@ defmodule Loupey.Bindings.RulesTest do
   end
 
   describe "match_input/3" do
-    test "matches press trigger with no condition" do
+    test "matches press trigger with single action" do
       binding = %Binding{
         input_rules: [
-          %InputRule{on: :press, action: "call_service", params: %{domain: "light", service: "toggle"}}
+          %InputRule{on: :press, actions: [%{action: "call_service", domain: "light", service: "toggle"}]}
         ]
       }
 
       event = %PressEvent{control_id: {:key, 0}, action: :press}
-      assert {:action, "call_service", %{domain: "light", service: "toggle"}} = Rules.match_input(event, binding, nil)
+      assert {:actions, [%{action: "call_service", domain: "light", service: "toggle"}]} = Rules.match_input(event, binding, nil)
+    end
+
+    test "matches press trigger with multiple actions" do
+      binding = %Binding{
+        input_rules: [
+          %InputRule{on: :press, actions: [
+            %{action: "call_service", domain: "light", service: "toggle", target: "light.lr"},
+            %{action: "call_service", domain: "media_player", service: "media_pause", target: "media_player.tv"}
+          ]}
+        ]
+      }
+
+      event = %PressEvent{control_id: {:key, 0}, action: :press}
+      assert {:actions, [first, second]} = Rules.match_input(event, binding, nil)
+      assert first.service == "toggle"
+      assert second.service == "media_pause"
     end
 
     test "does not match wrong trigger type" do
       binding = %Binding{
-        input_rules: [%InputRule{on: :press, action: "call_service", params: %{}}]
+        input_rules: [%InputRule{on: :press, actions: [%{action: "call_service"}]}]
       }
 
       event = %PressEvent{control_id: {:key, 0}, action: :release}
@@ -48,67 +64,61 @@ defmodule Loupey.Bindings.RulesTest do
           %InputRule{
             on: :press,
             when: ~s(state == "playing"),
-            action: "call_service",
-            params: %{domain: "media_player", service: "media_pause"}
+            actions: [%{action: "call_service", domain: "media_player", service: "media_pause"}]
           },
           %InputRule{
             on: :press,
             when: ~s(state != "playing"),
-            action: "call_service",
-            params: %{domain: "media_player", service: "media_play"}
+            actions: [%{action: "call_service", domain: "media_player", service: "media_play"}]
           }
         ]
       }
 
       event = %PressEvent{control_id: {:key, 0}, action: :press}
 
-      assert {:action, "call_service", %{service: "media_pause"}} =
-               Rules.match_input(event, binding, media_playing())
-
-      assert {:action, "call_service", %{service: "media_play"}} =
-               Rules.match_input(event, binding, light_off())
+      assert {:actions, [%{service: "media_pause"}]} = Rules.match_input(event, binding, media_playing())
+      assert {:actions, [%{service: "media_play"}]} = Rules.match_input(event, binding, light_off())
     end
 
     test "matches rotate triggers" do
       binding = %Binding{
         input_rules: [
-          %InputRule{on: :rotate_cw, action: "call_service", params: %{service: "volume_up"}},
-          %InputRule{on: :rotate_ccw, action: "call_service", params: %{service: "volume_down"}}
+          %InputRule{on: :rotate_cw, actions: [%{action: "call_service", service: "volume_up"}]},
+          %InputRule{on: :rotate_ccw, actions: [%{action: "call_service", service: "volume_down"}]}
         ]
       }
 
       cw = %RotateEvent{control_id: :knob_tl, direction: :cw}
       ccw = %RotateEvent{control_id: :knob_tl, direction: :ccw}
 
-      assert {:action, "call_service", %{service: "volume_up"}} = Rules.match_input(cw, binding, nil)
-      assert {:action, "call_service", %{service: "volume_down"}} = Rules.match_input(ccw, binding, nil)
+      assert {:actions, [%{service: "volume_up"}]} = Rules.match_input(cw, binding, nil)
+      assert {:actions, [%{service: "volume_down"}]} = Rules.match_input(ccw, binding, nil)
     end
 
     test "matches switch_layout action" do
       binding = %Binding{
         input_rules: [
-          %InputRule{on: :press, action: "switch_layout", params: %{layout: "media"}}
+          %InputRule{on: :press, actions: [%{action: "switch_layout", layout: "media"}]}
         ]
       }
 
       event = %PressEvent{control_id: {:button, 0}, action: :press}
-      assert {:action, "switch_layout", %{layout: "media"}} = Rules.match_input(event, binding, nil)
+      assert {:actions, [%{action: "switch_layout", layout: "media"}]} = Rules.match_input(event, binding, nil)
     end
 
-    test "resolves template expressions in params" do
+    test "resolves template expressions in action params" do
       binding = %Binding{
         entity_id: "light.lr",
         input_rules: [
           %InputRule{
             on: :press,
-            action: "call_service",
-            params: %{target: "{{ entity_id }}"}
+            actions: [%{action: "call_service", target: "{{ entity_id }}"}]
           }
         ]
       }
 
       event = %PressEvent{control_id: {:key, 0}, action: :press}
-      assert {:action, "call_service", %{target: "light.lr"}} = Rules.match_input(event, binding, light_on())
+      assert {:actions, [%{target: "light.lr"}]} = Rules.match_input(event, binding, light_on())
     end
 
     test "returns no_match for empty rules" do

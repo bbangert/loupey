@@ -89,6 +89,25 @@ defmodule Loupey.HA.StateCache do
   end
 
   @doc """
+  Get all available service domains and their services.
+  Returns `%{"light" => ["toggle", "turn_off", "turn_on"], ...}`.
+  """
+  @spec get_services() :: %{String.t() => [String.t()]}
+  def get_services do
+    GenServer.call(__MODULE__, :get_services)
+  rescue
+    _ -> %{}
+  end
+
+  @doc """
+  Get services for a specific domain.
+  """
+  @spec get_services(String.t()) :: [String.t()]
+  def get_services(domain) do
+    get_services() |> Map.get(domain, [])
+  end
+
+  @doc """
   The callback function to pass to `HAConnection` as `:on_event`.
   Routes connection events into this GenServer.
   """
@@ -105,7 +124,12 @@ defmodule Loupey.HA.StateCache do
   @impl true
   def init(_opts) do
     table = :ets.new(@table, [:named_table, :set, :public, read_concurrency: true])
-    {:ok, %{table: table}}
+    {:ok, %{table: table, services: %{}}}
+  end
+
+  @impl true
+  def handle_call(:get_services, _from, state) do
+    {:reply, state.services, state}
   end
 
   @impl true
@@ -119,6 +143,10 @@ defmodule Loupey.HA.StateCache do
     broadcast("ha:connected", :ha_connected)
 
     {:noreply, state}
+  end
+
+  def handle_cast({:ha_event, {:services, services}}, state) do
+    {:noreply, %{state | services: services}}
   end
 
   def handle_cast({:ha_event, {:state_changed, new_state, old_state}}, state) do

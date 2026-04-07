@@ -3,8 +3,8 @@ defmodule Loupey.Bindings.YamlParserTest do
 
   alias Loupey.Bindings.YamlParser
 
-  describe "parse_binding/1" do
-    test "parses a basic binding with input and output rules" do
+  describe "parse_binding/1 — old single-action format (backward compat)" do
+    test "parses single action into actions list" do
       yaml = """
       entity_id: "light.living_room"
       input_rules:
@@ -29,18 +29,18 @@ defmodule Loupey.Bindings.YamlParserTest do
 
       [input_rule] = binding.input_rules
       assert input_rule.on == :press
-      assert input_rule.action == "call_service"
-      assert input_rule.params.domain == "light"
-      assert input_rule.params.target == "{{ entity_id }}"
+      assert [action] = input_rule.actions
+      assert action.action == "call_service"
+      assert action.domain == "light"
+      assert action.target == "{{ entity_id }}"
 
       [on_rule, off_rule] = binding.output_rules
       assert on_rule.instructions.icon == "light/on.png"
       assert off_rule.instructions.color == "#333333"
     end
 
-    test "parses binding with when conditions on input rules" do
+    test "parses when conditions on input rules" do
       yaml = """
-      entity_id: "media_player.tv"
       input_rules:
         - on: press
           when: "{{ state == 'playing' }}"
@@ -61,9 +61,11 @@ defmodule Loupey.Bindings.YamlParserTest do
       [pause_rule, play_rule] = binding.input_rules
       assert pause_rule.when == "{{ state == 'playing' }}"
       assert play_rule.when == "{{ state == 'paused' }}"
+      assert [%{service: "media_pause"}] = pause_rule.actions
+      assert [%{service: "media_play"}] = play_rule.actions
     end
 
-    test "parses layout switch binding" do
+    test "parses layout switch" do
       yaml = """
       input_rules:
         - on: press
@@ -73,11 +75,35 @@ defmodule Loupey.Bindings.YamlParserTest do
       """
 
       assert {:ok, binding} = YamlParser.parse_binding(yaml)
-      assert binding.entity_id == nil
-
       [rule] = binding.input_rules
-      assert rule.action == "switch_layout"
-      assert rule.params.layout == "media"
+      assert [%{action: "switch_layout", layout: "media"}] = rule.actions
+    end
+  end
+
+  describe "parse_binding/1 — new actions list format" do
+    test "parses multiple actions per rule" do
+      yaml = """
+      input_rules:
+        - on: press
+          actions:
+            - action: call_service
+              domain: light
+              service: toggle
+              target: "light.office"
+            - action: call_service
+              domain: media_player
+              service: media_pause
+              target: "media_player.tv"
+      output_rules: []
+      """
+
+      assert {:ok, binding} = YamlParser.parse_binding(yaml)
+      [rule] = binding.input_rules
+      assert length(rule.actions) == 2
+      [first, second] = rule.actions
+      assert first.action == "call_service"
+      assert first.target == "light.office"
+      assert second.service == "media_pause"
     end
   end
 
@@ -151,7 +177,7 @@ defmodule Loupey.Bindings.YamlParserTest do
       assert binding.entity_id == "light.living_room"
 
       [input_rule] = binding.input_rules
-      assert input_rule.params.target == "light.living_room"
+      assert [%{target: "light.living_room"}] = input_rule.actions
 
       [on_rule, off_rule] = binding.output_rules
       assert on_rule.instructions.color == "#FF0000"

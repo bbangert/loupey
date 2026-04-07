@@ -15,13 +15,13 @@ defmodule Loupey.Bindings.Rules do
   Match an input event against a binding's input rules.
 
   Filters rules by trigger type, then evaluates `when` conditions top-down.
-  Returns `{:action, action_type, params}` for the first match, or `:no_match`.
+  Returns `{:actions, [action_map]}` for the first matching rule, or `:no_match`.
 
-  The entity_state is used to evaluate `when` conditions and resolve
-  template expressions in action params.
+  Each action map has at minimum an `:action` key ("call_service" or "switch_layout")
+  plus action-specific params (`:domain`, `:service`, `:target`, etc.).
   """
   @spec match_input(Loupey.Events.t(), Binding.t(), EntityState.t() | nil, Loupey.Device.Control.t() | nil) ::
-          {:action, String.t(), map()} | :no_match
+          {:actions, [map()]} | :no_match
   def match_input(event, binding, entity_state, control \\ nil)
 
   def match_input(event, %Binding{input_rules: rules}, entity_state, control) do
@@ -36,8 +36,8 @@ defmodule Loupey.Bindings.Rules do
     |> Enum.filter(&(&1.on == trigger))
     |> Enum.find_value(:no_match, fn rule ->
       if matches_condition?(rule.when, entity_state) do
-        params = resolve_params(rule.params, entity_state, event_context)
-        {:action, rule.action, params}
+        resolved = Enum.map(rule.actions, &resolve_action(&1, entity_state, event_context))
+        {:actions, resolved}
       end
     end)
   end
@@ -79,8 +79,8 @@ defmodule Loupey.Bindings.Rules do
     Expression.eval_condition(expr, entity_state)
   end
 
-  defp resolve_params(params, entity_state, event_context) do
-    Map.new(params, fn {key, value} ->
+  defp resolve_action(action_map, entity_state, event_context) do
+    Map.new(action_map, fn {key, value} ->
       {key, resolve_param_value(value, entity_state, event_context)}
     end)
   end
@@ -107,7 +107,6 @@ defmodule Loupey.Bindings.Rules do
 
   @doc """
   Enrich event context with control dimensions for touch calculations.
-  Call this before match_input when the control spec is available.
   """
   @spec enrich_event_context(map(), Loupey.Device.Control.t() | nil) :: map()
   def enrich_event_context(context, %{display: %{width: w, height: h}}) do

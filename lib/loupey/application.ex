@@ -8,51 +8,17 @@ defmodule Loupey.Application do
   @impl true
   def start(_type, _args) do
     children = [
-      # PubSub for all event dispatch (replaces EventRegistry and HAEventRegistry)
       {Phoenix.PubSub, name: Loupey.PubSub},
-      # Database
       Loupey.Repo,
-      # Telemetry
       LoupeyWeb.Telemetry,
-      # Registry for looking up DeviceServer processes by device_id
       {Registry, keys: :unique, name: Loupey.DeviceRegistry},
-      # DynamicSupervisor for device connections
+      Loupey.HA.Supervisor,
       {DynamicSupervisor, name: Loupey.DeviceSupervisor, strategy: :one_for_one},
-      # Phoenix endpoint
+      Loupey.Orchestrator,
       LoupeyWeb.Endpoint
     ]
 
-    result = Supervisor.start_link(children, strategy: :one_for_one, name: Loupey.Supervisor)
-
-    # Auto-connect to HA if there's a saved config
-    with {:ok, _} <- result do
-      auto_start()
-    end
-
-    result
-  end
-
-  defp auto_start do
-    auto_connect_ha()
-    # Give HA a moment to connect before starting engines
-    Task.start(fn ->
-      Process.sleep(2000)
-      Loupey.Orchestrator.connect_all_devices()
-    end)
-  rescue
-    _ -> :ok
-  end
-
-  defp auto_connect_ha do
-    case Loupey.Settings.get_active_ha_config() do
-      %{url: url, token: token} ->
-        Loupey.HA.connect(%Loupey.HA.Config{url: url, token: token})
-
-      nil ->
-        :ok
-    end
-  rescue
-    _ -> :ok
+    Supervisor.start_link(children, strategy: :one_for_one, name: Loupey.Supervisor)
   end
 
   @impl true
