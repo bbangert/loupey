@@ -34,6 +34,7 @@ defmodule Loupey.MixProject do
       {:websockex, "~> 0.4.3"},
       {:jason, "~> 1.4"},
       {:yaml_elixir, "~> 2.9"},
+      {:ymlr, "~> 5.0"},
 
       # Phoenix & web
       {:phoenix, "~> 1.7"},
