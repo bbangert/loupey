@@ -1,21 +1,22 @@
 defmodule Loupey.HA.EventsTest do
-  use ExUnit.Case, async: false
+  use ExUnit.Case, async: true
 
   alias Hassock.EntityState
   alias Loupey.HA.Events
 
   setup do
-    # Events runs under the app supervisor as a singleton. Use that instance
-    # rather than starting a fresh one here — its pid is what Hassock.Cache
-    # would send messages to in production.
-    events_pid = Process.whereis(Events)
-    assert is_pid(events_pid), "Loupey.HA.Events not running"
-    %{events: events_pid}
+    pubsub = :"pubsub_#{System.unique_integer([:positive])}"
+    events_name = :"events_#{System.unique_integer([:positive])}"
+
+    start_supervised!({Phoenix.PubSub, name: pubsub})
+    {:ok, events} = start_supervised({Events, [name: events_name, pubsub: pubsub]})
+
+    %{events: events, pubsub: pubsub}
   end
 
   describe ":ready" do
-    test "broadcasts :ha_connected on the ha:connected topic", %{events: events} do
-      :ok = Phoenix.PubSub.subscribe(Loupey.PubSub, "ha:connected")
+    test "broadcasts :ha_connected on the ha:connected topic", %{events: events, pubsub: pubsub} do
+      :ok = Phoenix.PubSub.subscribe(pubsub, "ha:connected")
 
       send(events, {:hassock_cache, self(), :ready})
 
@@ -24,9 +25,9 @@ defmodule Loupey.HA.EventsTest do
   end
 
   describe "{:changes, ...}" do
-    test "broadcasts added entities with old_state=nil", %{events: events} do
-      :ok = Phoenix.PubSub.subscribe(Loupey.PubSub, "ha:state:light.kitchen")
-      :ok = Phoenix.PubSub.subscribe(Loupey.PubSub, "ha:state:all")
+    test "broadcasts added entities with old_state=nil", %{events: events, pubsub: pubsub} do
+      :ok = Phoenix.PubSub.subscribe(pubsub, "ha:state:light.kitchen")
+      :ok = Phoenix.PubSub.subscribe(pubsub, "ha:state:all")
 
       new = entity("light.kitchen", "on")
       changes = %{added: [{"light.kitchen", new}], changed: [], removed: []}
@@ -36,9 +37,9 @@ defmodule Loupey.HA.EventsTest do
       assert_receive {:ha_state_changed, "light.kitchen", ^new, nil}, 500
     end
 
-    test "broadcasts changed entities with new and old state", %{events: events} do
-      :ok = Phoenix.PubSub.subscribe(Loupey.PubSub, "ha:state:light.office")
-      :ok = Phoenix.PubSub.subscribe(Loupey.PubSub, "ha:state:all")
+    test "broadcasts changed entities with new and old state", %{events: events, pubsub: pubsub} do
+      :ok = Phoenix.PubSub.subscribe(pubsub, "ha:state:light.office")
+      :ok = Phoenix.PubSub.subscribe(pubsub, "ha:state:all")
 
       old = entity("light.office", "off")
       new = entity("light.office", "on")
@@ -49,8 +50,8 @@ defmodule Loupey.HA.EventsTest do
       assert_receive {:ha_state_changed, "light.office", ^new, ^old}, 500
     end
 
-    test "does not broadcast to unrelated entity topics", %{events: events} do
-      :ok = Phoenix.PubSub.subscribe(Loupey.PubSub, "ha:state:switch.fan")
+    test "does not broadcast to unrelated entity topics", %{events: events, pubsub: pubsub} do
+      :ok = Phoenix.PubSub.subscribe(pubsub, "ha:state:switch.fan")
 
       new = entity("light.kitchen", "on")
       changes = %{added: [{"light.kitchen", new}], changed: [], removed: []}

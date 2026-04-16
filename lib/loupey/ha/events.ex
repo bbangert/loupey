@@ -16,46 +16,50 @@ defmodule Loupey.HA.Events do
 
   use GenServer
 
-  def start_link(_opts \\ []) do
-    GenServer.start_link(__MODULE__, :ok, name: __MODULE__)
+  @default_pubsub Loupey.PubSub
+
+  def start_link(opts \\ []) do
+    name = Keyword.get(opts, :name, __MODULE__)
+    pubsub = Keyword.get(opts, :pubsub, @default_pubsub)
+    GenServer.start_link(__MODULE__, pubsub, name: name)
   end
 
   @doc "Subscribe to state changes for a specific entity."
   def subscribe(entity_id) do
-    Phoenix.PubSub.subscribe(Loupey.PubSub, "ha:state:#{entity_id}")
+    Phoenix.PubSub.subscribe(@default_pubsub, "ha:state:#{entity_id}")
   end
 
   @doc "Subscribe to all state changes."
   def subscribe_all do
-    Phoenix.PubSub.subscribe(Loupey.PubSub, "ha:state:all")
+    Phoenix.PubSub.subscribe(@default_pubsub, "ha:state:all")
   end
 
   @doc "Subscribe to the connection-ready signal."
   def subscribe_connected do
-    Phoenix.PubSub.subscribe(Loupey.PubSub, "ha:connected")
+    Phoenix.PubSub.subscribe(@default_pubsub, "ha:connected")
   end
 
   @impl true
-  def init(:ok), do: {:ok, nil}
+  def init(pubsub), do: {:ok, pubsub}
 
   @impl true
-  def handle_info({:hassock_cache, _cache, :ready}, state) do
-    Phoenix.PubSub.broadcast(Loupey.PubSub, "ha:connected", :ha_connected)
-    {:noreply, state}
+  def handle_info({:hassock_cache, _cache, :ready}, pubsub) do
+    Phoenix.PubSub.broadcast(pubsub, "ha:connected", :ha_connected)
+    {:noreply, pubsub}
   end
 
-  def handle_info({:hassock_cache, _cache, {:changes, changes}}, state) do
+  def handle_info({:hassock_cache, _cache, {:changes, changes}}, pubsub) do
     %{added: added, changed: changed} = changes
-    for {entity_id, new_state} <- added, do: broadcast(entity_id, new_state, nil)
-    for {entity_id, new_state, old_state} <- changed, do: broadcast(entity_id, new_state, old_state)
-    {:noreply, state}
+    for {entity_id, new_state} <- added, do: broadcast(pubsub, entity_id, new_state, nil)
+    for {entity_id, new_state, old_state} <- changed, do: broadcast(pubsub, entity_id, new_state, old_state)
+    {:noreply, pubsub}
   end
 
-  def handle_info(_msg, state), do: {:noreply, state}
+  def handle_info(_msg, pubsub), do: {:noreply, pubsub}
 
-  defp broadcast(entity_id, new_state, old_state) do
+  defp broadcast(pubsub, entity_id, new_state, old_state) do
     msg = {:ha_state_changed, entity_id, new_state, old_state}
-    Phoenix.PubSub.broadcast(Loupey.PubSub, "ha:state:#{entity_id}", msg)
-    Phoenix.PubSub.broadcast(Loupey.PubSub, "ha:state:all", msg)
+    Phoenix.PubSub.broadcast(pubsub, "ha:state:#{entity_id}", msg)
+    Phoenix.PubSub.broadcast(pubsub, "ha:state:all", msg)
   end
 end

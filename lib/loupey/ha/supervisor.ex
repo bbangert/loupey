@@ -27,8 +27,6 @@ defmodule Loupey.HA.Supervisor do
   If already connected, returns `{:error, :already_started}`.
   """
   def connect(%Hassock.Config{} = config) do
-    controller = Process.whereis(Events)
-
     child_spec = %{
       id: :hassock,
       start:
@@ -37,7 +35,7 @@ defmodule Loupey.HA.Supervisor do
            [
              config: config,
              cache: true,
-             controller: controller,
+             controller: Events,
              name: @hassock_sup,
              connection_name: @connection_name,
              cache_name: @cache_name
