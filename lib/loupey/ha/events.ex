@@ -25,18 +25,18 @@ defmodule Loupey.HA.Events do
   end
 
   @doc "Subscribe to state changes for a specific entity."
-  def subscribe(entity_id) do
-    Phoenix.PubSub.subscribe(@default_pubsub, "ha:state:#{entity_id}")
+  def subscribe(entity_id, pubsub \\ @default_pubsub) do
+    Phoenix.PubSub.subscribe(pubsub, "ha:state:#{entity_id}")
   end
 
   @doc "Subscribe to all state changes."
-  def subscribe_all do
-    Phoenix.PubSub.subscribe(@default_pubsub, "ha:state:all")
+  def subscribe_all(pubsub \\ @default_pubsub) do
+    Phoenix.PubSub.subscribe(pubsub, "ha:state:all")
   end
 
   @doc "Subscribe to the connection-ready signal."
-  def subscribe_connected do
-    Phoenix.PubSub.subscribe(@default_pubsub, "ha:connected")
+  def subscribe_connected(pubsub \\ @default_pubsub) do
+    Phoenix.PubSub.subscribe(pubsub, "ha:connected")
   end
 
   @impl true

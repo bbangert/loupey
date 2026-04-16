@@ -4,10 +4,11 @@ defmodule Loupey.HA.Supervisor do
 
   `Events` runs as a permanent child so PubSub subscribe helpers work
   before a connection exists. `Hassock.Supervisor` is started dynamically
-  by `connect/1` with `Events`'s pid as the event controller.
+  by `connect/1` with the `Events` registered name as the event controller
+  — passed as an atom rather than a pid so that, under `rest_for_one`,
+  a hassock restart re-resolves to whatever pid is currently registered
+  instead of holding a reference to the dead pre-crash process.
 
-  Uses `rest_for_one` — if `Events` crashes, the hassock tree restarts
-  too, so the fresh `Events` pid re-owns cache events.
   """
 
   use Supervisor
