@@ -125,6 +125,7 @@ defmodule Loupey.Graphics.Renderer do
   defp apply_text(image, %{text: %{content: content} = opts} = instructions, width, height) do
     color = Map.get(opts, :color) || "#FFFFFF"
     font_size = Map.get(opts, :font_size) || 16
+    font_size = if is_binary(font_size), do: String.to_integer(font_size), else: font_size
 
     case Image.Text.text(content, text_fill_color: color, font_size: font_size) do
       {:ok, text_img} ->

@@ -58,7 +58,7 @@ defmodule LoupeyWeb.BindingFormComponent do
       |> assign(:icon_browser_idx, socket.assigns[:icon_browser_idx])
       |> assign(:icon_files, socket.assigns[:icon_files] || [])
       |> assign(:control, assigns[:control] || socket.assigns[:control])
-      |> assign_ha_services(first_mount)
+      |> assign_ha_services()
       |> assign(
         form_data: form_data,
         trigger_options: @trigger_options,
@@ -215,13 +215,24 @@ defmodule LoupeyWeb.BindingFormComponent do
           </select>
         </div>
         <div>
-          <select
-            name="service"
-            class="w-full bg-gray-700 border border-gray-600 rounded px-1 py-0.5 text-[10px] text-white"
-          >
-            <option value="">Service...</option>
-            <option :for={s <- services_for_domain(@action[:domain], @ha_services)} value={s} selected={s == @action[:service]}>{s}</option>
-          </select>
+          <%= if services_for_domain(@action[:domain], @ha_services) == [] do %>
+            <input
+              type="text"
+              name="service"
+              value={@action[:service] || ""}
+              phx-debounce="300"
+              placeholder="Service name (e.g. toggle)"
+              class="w-full bg-gray-700 border border-gray-600 rounded px-1 py-0.5 text-[10px] text-white"
+            />
+          <% else %>
+            <select
+              name="service"
+              class="w-full bg-gray-700 border border-gray-600 rounded px-1 py-0.5 text-[10px] text-white"
+            >
+              <option value="">Service...</option>
+              <option :for={s <- services_for_domain(@action[:domain], @ha_services)} value={s} selected={s == @action[:service]}>{s}</option>
+            </select>
+          <% end %>
         </div>
       </div>
       <div :if={@action[:action] == "call_service"}>
@@ -534,11 +545,11 @@ defmodule LoupeyWeb.BindingFormComponent do
         actions =
           List.update_at(rule.actions, aidx, fn action ->
             action
-            |> Map.put(:action, params["action_type"] || action[:action])
-            |> Map.put(:domain, params["domain"] || action[:domain])
-            |> Map.put(:service, params["service"] || action[:service])
-            |> Map.put(:target, params["target"] || action[:target])
-            |> Map.put(:layout, params["layout"] || action[:layout])
+            |> Map.put(:action, presence(params["action_type"]) || action[:action])
+            |> Map.put(:domain, presence(params["domain"]) || action[:domain])
+            |> Map.put(:service, presence(params["service"]) || action[:service])
+            |> Map.put(:target, presence(params["target"]) || action[:target])
+            |> Map.put(:layout, presence(params["layout"]) || action[:layout])
             |> update_action_service_data(params["service_data"])
           end)
 
@@ -640,24 +651,39 @@ defmodule LoupeyWeb.BindingFormComponent do
   end
 
   defp update_fill(rule, params) do
+    has_fill = presence(params["fill_amount"]) || presence(params["fill_direction"])
+
     fill =
-      %{}
-      |> put_if_not_empty(:amount, params["fill_amount"])
-      |> put_if_not_empty(:direction, params["fill_direction"])
-      |> put_if_not_empty(:color, params["fill_color"])
+      if has_fill do
+        %{}
+        |> put_if_not_empty(:amount, params["fill_amount"])
+        |> put_if_not_empty(:direction, params["fill_direction"])
+        |> put_if_not_empty(:color, params["fill_color"])
+      else
+        %{}
+      end
 
     if fill == %{}, do: Map.delete(rule, :fill), else: Map.put(rule, :fill, fill)
   end
 
   defp update_text(rule, params) do
+    has_content = presence(params["text_content"])
+
     text =
-      %{}
-      |> put_if_not_empty(:content, params["text_content"])
-      |> put_if_not_empty(:valign, params["text_valign"])
-      |> put_if_not_empty(:color, params["text_color"])
+      if has_content do
+        %{content: has_content}
+        |> put_if_not_empty(:valign, params["text_valign"])
+        |> put_if_not_empty(:color, params["text_color"])
+      else
+        %{}
+      end
 
     if text == %{}, do: Map.delete(rule, :text), else: Map.put(rule, :text, text)
   end
+
+  defp presence(nil), do: nil
+  defp presence(""), do: nil
+  defp presence(value), do: value
 
   defp put_if_not_empty(map, _key, nil), do: map
   defp put_if_not_empty(map, _key, ""), do: map
@@ -703,16 +729,22 @@ defmodule LoupeyWeb.BindingFormComponent do
 
   # -- Update lifecycle helpers --
 
-  defp assign_ha_services(socket, true) do
+  defp assign_ha_services(socket) do
     services = Loupey.HA.get_services()
-    domains = services |> Map.keys() |> Enum.sort()
+
+    # Derive domains from all known entities, not just service domains,
+    # so that domains like sensor/binary_sensor appear in the dropdown.
+    entity_domains =
+      Loupey.HA.get_all_states()
+      |> Enum.map(fn s -> s.entity_id |> String.split(".", parts: 2) |> hd() end)
+      |> Enum.uniq()
+
+    domains = Enum.sort(Enum.uniq(Map.keys(services) ++ entity_domains))
 
     socket
     |> assign(:ha_services, services)
     |> assign(:ha_domains, domains)
   end
-
-  defp assign_ha_services(socket, false), do: socket
 
   defp apply_action_target(form_data, indices_str, entity_id) do
     case String.split(indices_str, "_") do
