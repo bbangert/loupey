@@ -12,6 +12,7 @@ defmodule Loupey.Application do
       Loupey.Repo,
       LoupeyWeb.Telemetry,
       {Registry, keys: :unique, name: Loupey.DeviceRegistry},
+      {Task.Supervisor, name: Loupey.HA.TaskSupervisor},
       Loupey.HA.Supervisor,
       {DynamicSupervisor, name: Loupey.DeviceSupervisor, strategy: :one_for_one},
       Loupey.Orchestrator,

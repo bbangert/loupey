@@ -27,7 +27,7 @@ defmodule Loupey.HA.Supervisor do
   If already connected, returns `{:error, :already_started}`.
   """
   def connect(%Hassock.Config{} = config) do
-    controller = Process.whereis(Events) || raise "Loupey.HA.Events not running"
+    controller = Process.whereis(Events)
 
     child_spec = %{
       id: :hassock,

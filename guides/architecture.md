@@ -15,15 +15,15 @@ graph TD
     App --> Orch["Loupey.Orchestrator<br/><i>GenServer</i>"]
     App --> Endpoint["LoupeyWeb.Endpoint<br/><i>Phoenix/Cowboy</i>"]
 
-    HASup --> Events["HA.Events<br/><i>ETS cache, always running</i>"]
-    HASup -.->|"started on connect"| Conn["HA.Connection<br/><i>WebSockex</i>"]
+    HASup --> Events["HA.Events<br/><i>PubSub fan-out, always running</i>"]
+    HASup -.->|"started on connect"| HassockSup["Hassock.Supervisor<br/><i>one_for_all: Connection + Cache</i>"]
 
     DynSup -.->|"restart: transient"| DS1["DeviceServer<br/><i>per device</i>"]
     DynSup -.->|"restart: permanent"| Eng1["Bindings.Engine<br/><i>per device</i>"]
 
     style DS1 stroke-dasharray: 5 5
     style Eng1 stroke-dasharray: 5 5
-    style Conn stroke-dasharray: 5 5
+    style HassockSup stroke-dasharray: 5 5
 ```
 
 Dashed lines indicate dynamically started children.
@@ -33,9 +33,9 @@ Dashed lines indicate dynamically started children.
 | Process | Restart | Rationale |
 |---------|---------|-----------|
 | Orchestrator | `:permanent` (supervised) | Always running. Serializes all device/profile/HA coordination. On crash, restarts and re-subscribes to PubSub. |
-| HA.Supervisor | `:permanent` (supervised) | Always running. Events starts immediately; Connection starts on demand via `HA.connect/1`. Strategy: `rest_for_one` — if Events crashes, Connection restarts too. |
-| HA.Connection | `:permanent` (dynamic child of HA.Supervisor) | Started when user provides HA config. WebSockex handles reconnection internally. If it crashes, HA.Supervisor restarts it. |
-| HA.Events | `:permanent` (static child of HA.Supervisor) | Always running so entity lookups never crash. ETS table is rebuilt on restart; Connection re-fetches states on reconnect. |
+| HA.Supervisor | `:permanent` (supervised) | Always running. Events starts immediately; `Hassock.Supervisor` starts on demand via `HA.connect/1`. Strategy: `rest_for_one` — if Events crashes, the hassock tree restarts too so the fresh Events pid re-owns cache events. |
+| Hassock.Supervisor | `:permanent` (dynamic child of HA.Supervisor) | Started when user provides HA config. Owns `Hassock.Connection` + `Hassock.Cache` under `one_for_all`. Hassock handles WebSocket reconnection internally. |
+| HA.Events | `:permanent` (static child of HA.Supervisor) | Always running so PubSub subscribe helpers work before a connection exists. Pure fan-out: translates `{:hassock_cache, _, ...}` messages into `ha:connected` and `ha:state:*` broadcasts. Holds no state. |
 | DeviceServer | `:transient` (dynamic child of DeviceSupervisor) | Only restarts on abnormal exit. If the device is unplugged (normal exit), stays dead. Reconnection is handled by the Orchestrator. |
 | Bindings.Engine | `:permanent` (dynamic child of DeviceSupervisor) | Always restarts. On restart, loads the active profile from the database (not the stale child spec), re-subscribes to PubSub, and re-renders. |
 
@@ -47,7 +47,7 @@ When the Engine crashes and restarts via the DynamicSupervisor:
    original child spec arguments, which may be stale after profile edits
 2. Re-subscribes to `"device:{device_id}"` PubSub topic
 3. Re-subscribes to `"ha:state:{entity_id}"` for each entity in the profile
-4. Fetches current entity states from the Events ETS table
+4. Fetches current entity states from `Hassock.Cache` via the `Loupey.HA` facade
 5. Sends `:render_active_layout` to re-render the display
 
 If there's no active profile in the DB (deactivated while engine was running),
@@ -57,25 +57,34 @@ The Orchestrator can push a profile update via `Engine.update_profile/2`.
 ## HA Connection Lifecycle
 
 The HA.Supervisor starts as a child of the Application supervisor in
-"idle" state — only the Events is running. The Connection is started
+"idle" state — only `Events` is running. The hassock tree is started
 dynamically when `Loupey.HA.connect(config)` is called:
 
 ```
-1. App starts → HA.Supervisor starts → Events starts (empty ETS)
+1. App starts → HA.Supervisor starts → Events starts (no cache yet)
 2. Orchestrator.init subscribes to "ha:connected"
 3. Orchestrator.init calls auto_connect_ha() from saved DB config
 4. HA.connect(config) → HA.Supervisor.connect(config)
-   → starts Connection as dynamic child
-5. Connection authenticates, fetches states, subscribes to events
-6. Events receives initial_states → populates ETS
-7. Events broadcasts "ha:connected"
+   → starts Hassock.Supervisor as dynamic child, with Events's pid
+     as the cache controller
+5. Hassock.Connection authenticates; Hassock.Cache transfers ownership
+   and subscribes to all entities
+6. Hassock.Cache loads the initial snapshot, sends
+   {:hassock_cache, cache, :ready} to Events
+7. Events broadcasts :ha_connected on the "ha:connected" topic
 8. Orchestrator receives :ha_connected → connects devices + starts engines
 ```
 
+Steady-state entity updates flow
+`Hassock.Cache → {:hassock_cache, _, {:changes, _}} → Events →
+{:ha_state_changed, ...}` on `ha:state:{id}` and `ha:state:all`.
+
 On disconnect/crash:
-- Connection crash → HA.Supervisor restarts it → reconnects to HA
-- Events crash → HA.Supervisor restarts both (rest_for_one)
-  → Events gets empty ETS → Connection reconnects and re-fetches
+- Hassock's internal `one_for_all` restarts Connection + Cache together
+  on any crash within the hassock tree.
+- If `Events` crashes, `HA.Supervisor` (rest_for_one) restarts the
+  hassock tree too so the fresh Events pid owns the next cycle's cache
+  events.
 
 ## Orchestrator
 
@@ -134,7 +143,7 @@ Bindings.Engine
   │   → :no_match
   ▼
   ├─ call_service → Loupey.HA.call_service(ServiceCall)
-  │                    → HA.Connection WebSocket → Home Assistant
+  │                    → Task.Supervisor → Hassock.call_service → Home Assistant
   │
   └─ switch_layout → GenServer.cast(self, {:switch_layout, name})
                         → LayoutEngine.clear_all + switch_layout
@@ -145,15 +154,17 @@ Bindings.Engine
 
 ```
 Home Assistant
-  │ WebSocket state_changed event
+  │ WebSocket entity update (subscribe_entities)
   ▼
-HA.Connection (WebSockex)
-  │ Messages.parse(json) → {:state_changed, id, new, old}
-  │ on_event callback
+Hassock.Connection (WebSockex, owned by Hassock.Supervisor)
+  │ parses frame, forwards to Hassock.Cache as {:hassock, conn, {:event, {:entities, _}}}
+  ▼
+Hassock.Cache
+  │ applies diff to ETS, emits {:hassock_cache, cache, {:changes, %{added, changed, removed}}}
   ▼
 HA.Events
-  │ ETS insert
   │ PubSub.broadcast("ha:state:{entity_id}", {:ha_state_changed, ...})
+  │ PubSub.broadcast("ha:state:all", {:ha_state_changed, ...})
   ▼
 Bindings.Engine
   │ handle_info({:ha_state_changed, entity_id, new_state, old_state})
@@ -191,7 +202,7 @@ Bindings.Engine.init/1
   │ 2. Subscribe to device events (PubSub)
   │ 3. Load profile (from arg or DB)
   │ 4. Subscribe to HA state changes for referenced entities
-  │ 5. Fetch current entity states from Events
+  │ 5. Fetch current entity states via Loupey.HA facade (Hassock.Cache)
   │ 6. Render active layout → send RenderCommands to DeviceServer
 ```
 

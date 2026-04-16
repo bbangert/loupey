@@ -48,7 +48,10 @@ defmodule Loupey.HA do
   """
   @spec call_service(ServiceCall.t()) :: :ok
   def call_service(%ServiceCall{} = call) do
-    Task.start(fn -> Hassock.call_service(@connection_name, call) end)
+    Task.Supervisor.start_child(Loupey.HA.TaskSupervisor, fn ->
+      Hassock.call_service(@connection_name, call)
+    end)
+
     :ok
   end
 
