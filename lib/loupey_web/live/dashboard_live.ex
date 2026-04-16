@@ -9,7 +9,7 @@ defmodule LoupeyWeb.DashboardLive do
     end
 
     status = Loupey.Orchestrator.status()
-    ha_connected = Process.whereis(Loupey.HA.Connection) != nil
+    ha_connected = Loupey.HA.connected?()
 
     ha_entity_count =
       try do

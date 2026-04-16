@@ -18,8 +18,9 @@ defmodule Loupey.HA.IntegrationTest do
 
   use ExUnit.Case
 
+  alias Hassock.{Config, ServiceCall}
   alias Loupey.HA
-  alias Loupey.HA.{Config, ServiceCall, StateCache}
+  alias Loupey.HA.Events
 
   @moduletag :ha_integration
   @state_timeout_ms 10_000
@@ -36,7 +37,7 @@ defmodule Loupey.HA.IntegrationTest do
       {:ok, _pid} = HA.connect(config)
 
       # Wait for initial state load
-      :ok = StateCache.subscribe_connected()
+      :ok = Events.subscribe_connected()
 
       receive do
         :ha_connected -> :ok

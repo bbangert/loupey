@@ -31,7 +31,7 @@ defmodule Loupey.MixProject do
       {:image, "~> 0.55.2"},
 
       # Home Assistant
-      {:websockex, "~> 0.4.3"},
+      {:hassock, "~> 0.1.3"},
       {:jason, "~> 1.4"},
       {:yaml_elixir, "~> 2.9"},
       {:ymlr, "~> 5.0"},

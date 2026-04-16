@@ -17,8 +17,8 @@ defmodule Loupey.Bindings.Engine do
   alias Loupey.Device.{Control, Spec}
   alias Loupey.DeviceServer
   alias Loupey.Events.TouchEvent
+  alias Hassock.ServiceCall
   alias Loupey.HA
-  alias Loupey.HA.ServiceCall
 
   @touch_move_debounce_ms 400
 

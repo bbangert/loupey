@@ -12,7 +12,7 @@ defmodule Loupey.Bindings.Expression do
   ## Examples
 
       eval(~s(state_of("light.office") == "on"), nil)
-      #=> true (if light.office is on in the StateCache)
+      #=> true (if light.office is on in the Hassock cache)
 
       render(~s({{ state_of("sensor.temp") }}°F), nil)
       #=> "72.5°F"
@@ -22,7 +22,8 @@ defmodule Loupey.Bindings.Expression do
 
   """
 
-  alias Loupey.HA.{EntityState, StateCache}
+  alias Hassock.EntityState
+  alias Loupey.HA
 
   @doc """
   Evaluate a single expression string against entity state.
@@ -158,14 +159,14 @@ defmodule Loupey.Bindings.Expression do
   end
 
   defp state_of(entity_id) do
-    case StateCache.get(entity_id) do
+    case HA.get_state(entity_id) do
       %{state: state} -> state
       nil -> nil
     end
   end
 
   defp attr_of(entity_id, attribute_name) do
-    case StateCache.get(entity_id) do
+    case HA.get_state(entity_id) do
       %{attributes: attrs} -> Map.get(attrs, attribute_name)
       nil -> nil
     end

@@ -24,6 +24,6 @@ defmodule Loupey.Schemas.HAConfig do
   Convert to the core Config struct used by the HA connection.
   """
   def to_core(%__MODULE__{url: url, token: token}) do
-    %Loupey.HA.Config{url: url, token: token}
+    %Hassock.Config{url: url, token: token}
   end
 end

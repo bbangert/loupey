@@ -7,7 +7,7 @@ defmodule Loupey.Bindings.Rules do
 
   alias Loupey.Bindings.{Binding, Expression}
   alias Loupey.Events.{PressEvent, RotateEvent, TouchEvent}
-  alias Loupey.HA.EntityState
+  alias Hassock.EntityState
 
   # -- Input rule matching --
 

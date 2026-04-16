@@ -22,8 +22,9 @@ defmodule Loupey.Bindings.IntegrationTest do
   alias Loupey.DeviceServer
   alias Loupey.Events.TouchEvent
   alias Loupey.Graphics.Renderer
+  alias Hassock.Config
   alias Loupey.HA
-  alias Loupey.HA.{Config, StateCache}
+  alias Loupey.HA.Events
   alias Loupey.RenderCommands.DrawBuffer
 
   @moduletag :bindings_integration
@@ -57,7 +58,7 @@ defmodule Loupey.Bindings.IntegrationTest do
         spec = DeviceServer.get_spec(device_id)
 
         {:ok, _} = HA.connect(%Config{url: url, token: token})
-        :ok = StateCache.subscribe_connected()
+        :ok = Events.subscribe_connected()
 
         receive do
           :ha_connected -> :ok
