@@ -9,7 +9,7 @@ defmodule Loupey.Bindings.LayoutEngine do
   alias Loupey.Bindings.{Expression, Layout, Profile, Rules}
   alias Loupey.Device.{Control, Spec}
   alias Loupey.Graphics.Renderer
-  alias Loupey.HA.EntityState
+  alias Hassock.EntityState
   alias Loupey.RenderCommands.{DrawBuffer, SetLED}
 
   @doc """

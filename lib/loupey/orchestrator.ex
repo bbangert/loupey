@@ -289,7 +289,7 @@ defmodule Loupey.Orchestrator do
   defp auto_connect_ha do
     case Loupey.Settings.get_active_ha_config() do
       %{url: url, token: token} ->
-        Loupey.HA.connect(%Loupey.HA.Config{url: url, token: token})
+        Loupey.HA.connect(%Hassock.Config{url: url, token: token})
 
       nil ->
         :ok

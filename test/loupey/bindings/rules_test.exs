@@ -3,7 +3,7 @@ defmodule Loupey.Bindings.RulesTest do
 
   alias Loupey.Bindings.{Binding, InputRule, OutputRule, Rules}
   alias Loupey.Events.{PressEvent, RotateEvent}
-  alias Loupey.HA.EntityState
+  alias Hassock.EntityState
 
   defp light_on do
     %EntityState{entity_id: "light.lr", state: "on", attributes: %{"brightness" => 200}}

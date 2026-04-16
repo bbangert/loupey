@@ -76,7 +76,7 @@ defmodule LoupeyWeb.SettingsLive do
     case Settings.save_ha_config(%{"url" => url, "token" => token}) do
       {:ok, _config} ->
         # Connect (or reconnect) to HA
-        case Loupey.HA.connect(%Loupey.HA.Config{url: url, token: token}) do
+        case Loupey.HA.connect(%Hassock.Config{url: url, token: token}) do
           {:ok, _pid} ->
             {:noreply,
              socket

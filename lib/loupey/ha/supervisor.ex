@@ -1,36 +1,46 @@
 defmodule Loupey.HA.Supervisor do
   @moduledoc """
-  Supervises the Home Assistant connection and state cache.
+  Supervises the Home Assistant integration.
 
-  Starts as a proper child of the Application supervisor. Always runs
-  the StateCache (so entity lookups never crash). The Connection is
-  started dynamically when `connect/1` is called with HA config.
+  `Events` runs as a permanent child so PubSub subscribe helpers work
+  before a connection exists. `Hassock.Supervisor` is started dynamically
+  by `connect/1` with `Events`'s pid as the event controller.
 
-  Uses `rest_for_one` — if StateCache crashes, Connection restarts too.
+  Uses `rest_for_one` — if `Events` crashes, the hassock tree restarts
+  too, so the fresh `Events` pid re-owns cache events.
   """
 
   use Supervisor
 
-  alias Loupey.HA.{Config, Connection, StateCache}
+  alias Loupey.HA.Events
+
+  @hassock_sup Loupey.HA.HassockSupervisor
+  @connection_name Loupey.HA.Connection
+  @cache_name Loupey.HA.HassockCache
 
   def start_link(_opts) do
     Supervisor.start_link(__MODULE__, :ok, name: __MODULE__)
   end
 
   @doc """
-  Start the HA WebSocket connection with the given config.
+  Start the hassock connection + cache with the given config.
   If already connected, returns `{:error, :already_started}`.
   """
-  def connect(%Config{} = config) do
+  def connect(%Hassock.Config{} = config) do
+    controller = Process.whereis(Events) || raise "Loupey.HA.Events not running"
+
     child_spec = %{
-      id: Connection,
+      id: :hassock,
       start:
-        {Connection, :start_link,
+        {Hassock.Supervisor, :start_link,
          [
            [
              config: config,
-             on_event: StateCache.event_callback(),
-             name: Loupey.HA.Connection
+             cache: true,
+             controller: controller,
+             name: @hassock_sup,
+             connection_name: @connection_name,
+             cache_name: @cache_name
            ]
          ]},
       restart: :permanent
@@ -39,29 +49,21 @@ defmodule Loupey.HA.Supervisor do
     Supervisor.start_child(__MODULE__, child_spec)
   end
 
-  @doc """
-  Stop the HA WebSocket connection.
-  """
+  @doc "Stop the hassock connection."
   def disconnect do
-    case Supervisor.terminate_child(__MODULE__, Connection) do
-      :ok -> Supervisor.delete_child(__MODULE__, Connection)
+    case Supervisor.terminate_child(__MODULE__, :hassock) do
+      :ok -> Supervisor.delete_child(__MODULE__, :hassock)
       error -> error
     end
   end
 
-  @doc """
-  Check if the HA connection is running.
-  """
+  @doc "Check if the HA connection is running."
   def connected? do
-    Process.whereis(Loupey.HA.Connection) != nil
+    Process.whereis(@connection_name) != nil
   end
 
   @impl true
   def init(:ok) do
-    children = [
-      {StateCache, []}
-    ]
-
-    Supervisor.init(children, strategy: :rest_for_one)
+    Supervisor.init([Events], strategy: :rest_for_one)
   end
 end

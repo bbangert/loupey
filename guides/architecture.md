@@ -15,7 +15,7 @@ graph TD
     App --> Orch["Loupey.Orchestrator<br/><i>GenServer</i>"]
     App --> Endpoint["LoupeyWeb.Endpoint<br/><i>Phoenix/Cowboy</i>"]
 
-    HASup --> StateCache["HA.StateCache<br/><i>ETS cache, always running</i>"]
+    HASup --> Events["HA.Events<br/><i>ETS cache, always running</i>"]
     HASup -.->|"started on connect"| Conn["HA.Connection<br/><i>WebSockex</i>"]
 
     DynSup -.->|"restart: transient"| DS1["DeviceServer<br/><i>per device</i>"]
@@ -33,9 +33,9 @@ Dashed lines indicate dynamically started children.
 | Process | Restart | Rationale |
 |---------|---------|-----------|
 | Orchestrator | `:permanent` (supervised) | Always running. Serializes all device/profile/HA coordination. On crash, restarts and re-subscribes to PubSub. |
-| HA.Supervisor | `:permanent` (supervised) | Always running. StateCache starts immediately; Connection starts on demand via `HA.connect/1`. Strategy: `rest_for_one` — if StateCache crashes, Connection restarts too. |
+| HA.Supervisor | `:permanent` (supervised) | Always running. Events starts immediately; Connection starts on demand via `HA.connect/1`. Strategy: `rest_for_one` — if Events crashes, Connection restarts too. |
 | HA.Connection | `:permanent` (dynamic child of HA.Supervisor) | Started when user provides HA config. WebSockex handles reconnection internally. If it crashes, HA.Supervisor restarts it. |
-| HA.StateCache | `:permanent` (static child of HA.Supervisor) | Always running so entity lookups never crash. ETS table is rebuilt on restart; Connection re-fetches states on reconnect. |
+| HA.Events | `:permanent` (static child of HA.Supervisor) | Always running so entity lookups never crash. ETS table is rebuilt on restart; Connection re-fetches states on reconnect. |
 | DeviceServer | `:transient` (dynamic child of DeviceSupervisor) | Only restarts on abnormal exit. If the device is unplugged (normal exit), stays dead. Reconnection is handled by the Orchestrator. |
 | Bindings.Engine | `:permanent` (dynamic child of DeviceSupervisor) | Always restarts. On restart, loads the active profile from the database (not the stale child spec), re-subscribes to PubSub, and re-renders. |
 
@@ -47,7 +47,7 @@ When the Engine crashes and restarts via the DynamicSupervisor:
    original child spec arguments, which may be stale after profile edits
 2. Re-subscribes to `"device:{device_id}"` PubSub topic
 3. Re-subscribes to `"ha:state:{entity_id}"` for each entity in the profile
-4. Fetches current entity states from the StateCache ETS table
+4. Fetches current entity states from the Events ETS table
 5. Sends `:render_active_layout` to re-render the display
 
 If there's no active profile in the DB (deactivated while engine was running),
@@ -57,25 +57,25 @@ The Orchestrator can push a profile update via `Engine.update_profile/2`.
 ## HA Connection Lifecycle
 
 The HA.Supervisor starts as a child of the Application supervisor in
-"idle" state — only the StateCache is running. The Connection is started
+"idle" state — only the Events is running. The Connection is started
 dynamically when `Loupey.HA.connect(config)` is called:
 
 ```
-1. App starts → HA.Supervisor starts → StateCache starts (empty ETS)
+1. App starts → HA.Supervisor starts → Events starts (empty ETS)
 2. Orchestrator.init subscribes to "ha:connected"
 3. Orchestrator.init calls auto_connect_ha() from saved DB config
 4. HA.connect(config) → HA.Supervisor.connect(config)
    → starts Connection as dynamic child
 5. Connection authenticates, fetches states, subscribes to events
-6. StateCache receives initial_states → populates ETS
-7. StateCache broadcasts "ha:connected"
+6. Events receives initial_states → populates ETS
+7. Events broadcasts "ha:connected"
 8. Orchestrator receives :ha_connected → connects devices + starts engines
 ```
 
 On disconnect/crash:
 - Connection crash → HA.Supervisor restarts it → reconnects to HA
-- StateCache crash → HA.Supervisor restarts both (rest_for_one)
-  → StateCache gets empty ETS → Connection reconnects and re-fetches
+- Events crash → HA.Supervisor restarts both (rest_for_one)
+  → Events gets empty ETS → Connection reconnects and re-fetches
 
 ## Orchestrator
 
@@ -107,9 +107,9 @@ the `Loupey.PubSub` server.
 | Topic | Publisher | Subscribers | Message Format |
 |-------|-----------|-------------|----------------|
 | `"device:{device_id}"` | DeviceServer | Engine, integration tests | `{:device_event, device_id, event}` where event is `PressEvent`, `RotateEvent`, or `TouchEvent` |
-| `"ha:state:{entity_id}"` | StateCache | Engine | `{:ha_state_changed, entity_id, new_state, old_state}` |
-| `"ha:state:all"` | StateCache | (available for future use) | `{:ha_state_changed, entity_id, new_state, old_state}` |
-| `"ha:connected"` | StateCache | Orchestrator, Dashboard LiveView | `:ha_connected` |
+| `"ha:state:{entity_id}"` | Events | Engine | `{:ha_state_changed, entity_id, new_state, old_state}` |
+| `"ha:state:all"` | Events | (available for future use) | `{:ha_state_changed, entity_id, new_state, old_state}` |
+| `"ha:connected"` | Events | Orchestrator, Dashboard LiveView | `:ha_connected` |
 
 PubSub subscriptions are automatically cleaned up when the subscribing
 process dies (Phoenix.PubSub uses process monitors internally).
@@ -151,7 +151,7 @@ HA.Connection (WebSockex)
   │ Messages.parse(json) → {:state_changed, id, new, old}
   │ on_event callback
   ▼
-HA.StateCache
+HA.Events
   │ ETS insert
   │ PubSub.broadcast("ha:state:{entity_id}", {:ha_state_changed, ...})
   ▼
@@ -191,7 +191,7 @@ Bindings.Engine.init/1
   │ 2. Subscribe to device events (PubSub)
   │ 3. Load profile (from arg or DB)
   │ 4. Subscribe to HA state changes for referenced entities
-  │ 5. Fetch current entity states from StateCache
+  │ 5. Fetch current entity states from Events
   │ 6. Render active layout → send RenderCommands to DeviceServer
 ```
 
@@ -255,8 +255,7 @@ DeviceServer → Device (display updates)
 |--------|------|---------------|---------|
 | `DeviceServer` | GenServer | `{Loupey.DeviceRegistry, device_id}` | UART I/O, event broadcasting, command encoding |
 | `Bindings.Engine` | GenServer | `{Loupey.DeviceRegistry, {:engine, device_id}}` | Binding evaluation, layout management. Loads profile from DB on restart. |
-| `HA.Connection` | WebSockex | `Loupey.HA.Connection` | HA WebSocket client |
-| `HA.StateCache` | GenServer | `Loupey.HA.StateCache` | ETS cache owner, event broadcaster |
+| `HA.Events` | GenServer | `Loupey.HA.Events` | Fans hassock cache events into Loupey PubSub |
 
 ### Layer 4: Coordination and Web
 
