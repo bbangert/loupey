@@ -31,12 +31,17 @@ defmodule Loupey.Driver.Loupedeck.Connection do
     GenServer.start_link(__MODULE__, {tty, parent})
   end
 
+  # UART writes should complete in well under a millisecond; 5 s is a
+  # "something is genuinely wrong" bound — timeout raises in the caller
+  # (DeviceServer), which its supervisor restarts cleanly.
+  @send_timeout_ms 5_000
+
   @doc """
   Frame, chunk, and write an encoded command to the device.
   """
   @spec send_command(pid(), {byte(), binary()}) :: :ok | {:error, term()}
   def send_command(pid, {cmd_byte, payload}) do
-    GenServer.call(pid, {:send_command, cmd_byte, payload}, :infinity)
+    GenServer.call(pid, {:send_command, cmd_byte, payload}, @send_timeout_ms)
   end
 
   @doc """
@@ -81,6 +86,19 @@ defmodule Loupey.Driver.Loupedeck.Connection do
     {:stop, {:uart_error, reason}, state}
   end
 
+  # The linked UART port died — stop so the supervisor can restart us with
+  # a fresh port. `terminate/2` runs force_cleanup on the already-dead pid,
+  # which is a no-op after the catch blocks in force_cleanup/1.
+  def handle_info({:EXIT, uart_pid, reason}, %State{uart_pid: uart_pid} = state) do
+    Logger.warning("UART process exited from #{state.tty}: #{inspect(reason)}")
+    {:stop, {:uart_exited, reason}, state}
+  end
+
+  # Our parent DeviceServer died — no one left to serve, shut down.
+  def handle_info({:EXIT, parent, reason}, %State{parent: parent} = state) do
+    {:stop, reason, state}
+  end
+
   def handle_info(_msg, state), do: {:noreply, state}
 
   @impl true
@@ -92,8 +110,13 @@ defmodule Loupey.Driver.Loupedeck.Connection do
   # -- Internals --
 
   defp open_uart(tty) do
-    {:ok, uart_pid} = Circuits.UART.start_link()
+    case Circuits.UART.start_link() do
+      {:ok, uart_pid} -> configure_uart(uart_pid, tty)
+      {:error, _} = error -> error
+    end
+  end
 
+  defp configure_uart(uart_pid, tty) do
     try do
       with :ok <- Circuits.UART.open(uart_pid, tty, speed: 256_000, active: false),
            # Send a WebSocket close frame first in case the device is still in

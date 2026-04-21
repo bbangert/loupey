@@ -27,12 +27,16 @@ defmodule Loupey.Driver do
   @doc """
   Open a connection to the device.
 
+  `device_ref` is an opaque identifier supplied by the discovery layer
+  (e.g. a UART tty path, a hidraw path, an hidapi struct, or a test pid).
+  Its shape is meaningful only to the driver.
+
   `opts` must include `:parent` — the pid that will receive
   `{:device_data, binary}` messages as bytes arrive from the transport.
   The returned `connection` is opaque; it is passed back to
   `send_command/2` and `close/1`.
   """
-  @callback open(device_path :: String.t(), opts :: keyword()) ::
+  @callback open(device_ref :: term(), opts :: keyword()) ::
               {:ok, connection :: term()} | {:error, term()}
 
   @doc """

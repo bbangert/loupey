@@ -332,6 +332,8 @@ defmodule LoupeyWeb.ProfileEditorLive do
     {:noreply, assign(socket, editor_mode: String.to_existing_atom(mode))}
   end
 
+  def handle_event("set_editor_mode", _params, socket), do: {:noreply, socket}
+
   def handle_event("delete_binding", _params, socket) do
     if socket.assigns.editing_binding do
       Profiles.delete_binding(socket.assigns.editing_binding)
