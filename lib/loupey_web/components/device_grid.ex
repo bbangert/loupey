@@ -89,11 +89,11 @@ defmodule LoupeyWeb.DeviceGrid do
     """
   end
 
-  attr(:control, :map, required: true)
-  attr(:bindings, :map, required: true)
-  attr(:selected, :any, default: nil)
-  attr(:class, :string, default: "")
-  attr(:style, :string, default: "")
+  attr :control, :map, required: true
+  attr :bindings, :map, required: true
+  attr :selected, :any, default: nil
+  attr :class, :string, default: ""
+  attr :style, :string, default: ""
 
   defp control_cell(assigns) do
     ~H"""

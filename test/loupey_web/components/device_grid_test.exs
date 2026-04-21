@@ -6,7 +6,10 @@ defmodule LoupeyWeb.DeviceGridTest do
   cannot exhaust the atom table.
   """
 
-  use ExUnit.Case, async: true
+  # async: false — this module asserts on `:erlang.system_info(:atom_count)`,
+  # which is global to the VM. Running in parallel with other tests lets
+  # unrelated atom creation inflate the delta and flake the assertion.
+  use ExUnit.Case, async: false
 
   alias LoupeyWeb.DeviceGrid
 

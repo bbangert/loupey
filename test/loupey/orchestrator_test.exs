@@ -56,8 +56,15 @@ defmodule Loupey.OrchestratorTest do
       assert_receive {:DOWN, ^ref, :process, ^pid, _reason}, 1_000
       refute Process.alive?(pid)
 
+      # Filter by `modules` rather than pid: a restart would produce a new
+      # pid and the pid-equality check would still pass. (`DynamicSupervisor`
+      # always returns `:undefined` for the id element, so that can't be
+      # used either — `modules` is the actionable identifier here.)
       children = DynamicSupervisor.which_children(Loupey.DeviceSupervisor)
-      refute Enum.any?(children, fn {_, p, _, _} -> p == pid end)
+
+      refute Enum.any?(children, fn {_id, _p, _type, modules} ->
+               __MODULE__.TransientProbe in modules
+             end)
     end
 
     test "orchestrator.ex declares the engine child spec with restart: :transient" do
