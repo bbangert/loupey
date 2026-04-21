@@ -176,7 +176,10 @@ defmodule Loupey.IntegrationTest do
       clear_all_displays(id, spec)
     end
 
-    test "renders icons from icons/ directory across display keys in pages", %{device_id: id, spec: spec} do
+    test "renders icons from icons/ directory across display keys in pages", %{
+      device_id: id,
+      spec: spec
+    } do
       icon_dir = Path.join(File.cwd!(), "icons")
 
       icon_paths =
@@ -207,9 +210,13 @@ defmodule Loupey.IntegrationTest do
 
         pages = Enum.chunk_every(icon_paths, key_count)
         total_pages = length(pages)
-        IO.puts("\n  Rendering #{length(icon_paths)} icons across #{total_pages} pages of #{key_count} keys...")
 
-        backgrounds = Stream.cycle(["#1a1a2e", "#16213e", "#0f3460", "#1a0a2e", "#2e1a0a", "#0a2e1a"])
+        IO.puts(
+          "\n  Rendering #{length(icon_paths)} icons across #{total_pages} pages of #{key_count} keys..."
+        )
+
+        backgrounds =
+          Stream.cycle(["#1a1a2e", "#16213e", "#0f3460", "#1a0a2e", "#2e1a0a", "#0a2e1a"])
 
         for {page, page_idx} <- Enum.with_index(pages) do
           # Render each icon in this page to a key
@@ -274,10 +281,22 @@ defmodule Loupey.IntegrationTest do
         %{text: %{content: "Mute", color: "#FF4444", font_size: 18}, background: "#2e0a0a"},
         %{text: %{content: "Vol+", color: "#44FF44", font_size: 20}, background: "#0a2e0a"},
         %{text: %{content: "Vol-", color: "#4444FF", font_size: 20}, background: "#0a0a2e"},
-        %{text: %{content: "TOP", color: "#FFAA00", font_size: 14, valign: :top}, background: "#1a1a1a"},
-        %{text: %{content: "BTM", color: "#FFAA00", font_size: 14, valign: :bottom}, background: "#1a1a1a"},
-        %{text: %{content: "LEFT", color: "#00AAFF", font_size: 12, align: :left}, background: "#1a1a1a"},
-        %{text: %{content: "RIGHT", color: "#00AAFF", font_size: 12, align: :right}, background: "#1a1a1a"},
+        %{
+          text: %{content: "TOP", color: "#FFAA00", font_size: 14, valign: :top},
+          background: "#1a1a1a"
+        },
+        %{
+          text: %{content: "BTM", color: "#FFAA00", font_size: 14, valign: :bottom},
+          background: "#1a1a1a"
+        },
+        %{
+          text: %{content: "LEFT", color: "#00AAFF", font_size: 12, align: :left},
+          background: "#1a1a1a"
+        },
+        %{
+          text: %{content: "RIGHT", color: "#00AAFF", font_size: 12, align: :right},
+          background: "#1a1a1a"
+        },
         %{text: %{content: "BIG", color: "#FFFFFF", font_size: 28}, background: "#2e1a2e"},
         %{text: %{content: "tiny", color: "#888888", font_size: 10}, background: "#111111"}
       ]
@@ -371,12 +390,24 @@ defmodule Loupey.IntegrationTest do
           %{
             background: "#111111",
             fill: %{amount: 75, direction: :to_top, color: "#00AA44"},
-            text: %{content: "Volume", color: "#FFFFFF", font_size: 12, orientation: :vertical, valign: :middle}
+            text: %{
+              content: "Volume",
+              color: "#FFFFFF",
+              font_size: 12,
+              orientation: :vertical,
+              valign: :middle
+            }
           },
           %{
             background: "#111111",
             fill: %{amount: 40, direction: :to_top, color: "#CC6600"},
-            text: %{content: "Bright", color: "#FFFFFF", font_size: 12, orientation: :vertical, valign: :middle}
+            text: %{
+              content: "Bright",
+              color: "#FFFFFF",
+              font_size: 12,
+              orientation: :vertical,
+              valign: :middle
+            }
           }
         ]
 
@@ -406,7 +437,16 @@ defmodule Loupey.IntegrationTest do
       led_controls = Spec.controls_with_capability(spec, :led)
       assert led_controls != [], "No LED controls found"
 
-      colors = ["#FF0000", "#00FF00", "#0000FF", "#FFFF00", "#FF00FF", "#00FFFF", "#FFFFFF", "#FF8800"]
+      colors = [
+        "#FF0000",
+        "#00FF00",
+        "#0000FF",
+        "#FFFF00",
+        "#FF00FF",
+        "#00FFFF",
+        "#FFFFFF",
+        "#FF8800"
+      ]
 
       for {control, color} <- Enum.zip(led_controls, Stream.cycle(colors)) do
         DeviceServer.render(id, %SetLED{control_id: control.id, color: color})
@@ -476,6 +516,7 @@ defmodule Loupey.IntegrationTest do
       if keys != [] do
         # Highlight the target key
         target = hd(keys)
+
         render_to_key(id, target, %{
           background: "#0044AA",
           text: %{content: "Touch", color: "#FFFFFF", font_size: 18}
@@ -483,6 +524,7 @@ defmodule Loupey.IntegrationTest do
 
         # Show prompt on remaining keys
         rest = Enum.drop(keys, 1) |> Enum.take(2)
+
         prompt_instructions = [
           %{background: "#1a1a2e", text: %{content: "Touch", color: "#AAAAAA", font_size: 16}},
           %{background: "#1a1a2e", text: %{content: "blue key", color: "#4488FF", font_size: 14}}
@@ -494,14 +536,19 @@ defmodule Loupey.IntegrationTest do
 
         refresh_all_displays(id, spec)
 
-        assert_receive {:device_event, ^id, %TouchEvent{action: :start} = touch}, @input_timeout_ms
+        assert_receive {:device_event, ^id, %TouchEvent{action: :start} = touch},
+                       @input_timeout_ms
 
         # Show touch coordinates on the device
-        render_prompt(id, spec, keys,
+        render_prompt(
+          id,
+          spec,
+          keys,
           "Touch!",
           "(#{touch.x},#{touch.y})",
           "#{inspect(touch.control_id)}"
         )
+
         Process.sleep(800)
 
         # Drain the touch end event

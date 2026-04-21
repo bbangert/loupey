@@ -25,21 +25,34 @@ defmodule Loupey.Bindings.RulesTest do
     test "matches press trigger with single action" do
       binding = %Binding{
         input_rules: [
-          %InputRule{on: :press, actions: [%{action: "call_service", domain: "light", service: "toggle"}]}
+          %InputRule{
+            on: :press,
+            actions: [%{action: "call_service", domain: "light", service: "toggle"}]
+          }
         ]
       }
 
       event = %PressEvent{control_id: {:key, 0}, action: :press}
-      assert {:actions, [%{action: "call_service", domain: "light", service: "toggle"}]} = Rules.match_input(event, binding, nil)
+
+      assert {:actions, [%{action: "call_service", domain: "light", service: "toggle"}]} =
+               Rules.match_input(event, binding, nil)
     end
 
     test "matches press trigger with multiple actions" do
       binding = %Binding{
         input_rules: [
-          %InputRule{on: :press, actions: [
-            %{action: "call_service", domain: "light", service: "toggle", target: "light.lr"},
-            %{action: "call_service", domain: "media_player", service: "media_pause", target: "media_player.tv"}
-          ]}
+          %InputRule{
+            on: :press,
+            actions: [
+              %{action: "call_service", domain: "light", service: "toggle", target: "light.lr"},
+              %{
+                action: "call_service",
+                domain: "media_player",
+                service: "media_pause",
+                target: "media_player.tv"
+              }
+            ]
+          }
         ]
       }
 
@@ -76,15 +89,21 @@ defmodule Loupey.Bindings.RulesTest do
 
       event = %PressEvent{control_id: {:key, 0}, action: :press}
 
-      assert {:actions, [%{service: "media_pause"}]} = Rules.match_input(event, binding, media_playing())
-      assert {:actions, [%{service: "media_play"}]} = Rules.match_input(event, binding, light_off())
+      assert {:actions, [%{service: "media_pause"}]} =
+               Rules.match_input(event, binding, media_playing())
+
+      assert {:actions, [%{service: "media_play"}]} =
+               Rules.match_input(event, binding, light_off())
     end
 
     test "matches rotate triggers" do
       binding = %Binding{
         input_rules: [
           %InputRule{on: :rotate_cw, actions: [%{action: "call_service", service: "volume_up"}]},
-          %InputRule{on: :rotate_ccw, actions: [%{action: "call_service", service: "volume_down"}]}
+          %InputRule{
+            on: :rotate_ccw,
+            actions: [%{action: "call_service", service: "volume_down"}]
+          }
         ]
       }
 
@@ -103,7 +122,9 @@ defmodule Loupey.Bindings.RulesTest do
       }
 
       event = %PressEvent{control_id: {:button, 0}, action: :press}
-      assert {:actions, [%{action: "switch_layout", layout: "media"}]} = Rules.match_input(event, binding, nil)
+
+      assert {:actions, [%{action: "switch_layout", layout: "media"}]} =
+               Rules.match_input(event, binding, nil)
     end
 
     test "resolves template expressions in action params" do
@@ -132,13 +153,22 @@ defmodule Loupey.Bindings.RulesTest do
     test "matches first true condition" do
       binding = %Binding{
         output_rules: [
-          %OutputRule{when: ~s(state == "on"), instructions: %{icon: "light/on.png", color: "#FFD700"}},
-          %OutputRule{when: ~s(state == "off"), instructions: %{icon: "light/off.png", color: "#333333"}}
+          %OutputRule{
+            when: ~s(state == "on"),
+            instructions: %{icon: "light/on.png", color: "#FFD700"}
+          },
+          %OutputRule{
+            when: ~s(state == "off"),
+            instructions: %{icon: "light/off.png", color: "#333333"}
+          }
         ]
       }
 
-      assert {:match, %{icon: "light/on.png", color: "#FFD700"}} = Rules.match_output(binding, light_on())
-      assert {:match, %{icon: "light/off.png", color: "#333333"}} = Rules.match_output(binding, light_off())
+      assert {:match, %{icon: "light/on.png", color: "#FFD700"}} =
+               Rules.match_output(binding, light_on())
+
+      assert {:match, %{icon: "light/off.png", color: "#333333"}} =
+               Rules.match_output(binding, light_off())
     end
 
     test "unconditional rule (true) always matches" do
