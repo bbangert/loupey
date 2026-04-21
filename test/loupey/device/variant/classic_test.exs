@@ -69,7 +69,9 @@ defmodule Loupey.Device.Variant.ClassicTest do
 
         assert control.display.width == 72
         assert control.display.height == 72
-        assert control.display.pixel_format == :jpeg
+        # :jpeg_flipped — the Stream Deck mounts its LCD upside-down, so
+        # images are rotated 180° before JPEG encoding.
+        assert control.display.pixel_format == :jpeg_flipped
         assert control.display.offset == {col * 72, row * 72}
         # Stream Deck writes each key atomically — no shared framebuffer, so
         # display_id stays nil and the driver skips the (optional) refresh step.
