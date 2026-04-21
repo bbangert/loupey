@@ -48,8 +48,14 @@ defmodule Loupey.Driver do
   Send an encoded command (from `encode/1` or `encode_refresh/1`) over
   the transport. The driver is responsible for any framing, chunking, or
   per-connection stateful bookkeeping (e.g. transaction IDs).
+
+  The `encoded` shape is **driver-opaque** — `encode/1` and `send_command/2`
+  are paired per driver, so each driver is free to return whatever internal
+  shape is convenient (e.g. a single `{byte, binary}` tuple for a framed
+  protocol, a list of packets, a tagged feature-report tuple, or
+  `:unsupported`). `Loupey.DeviceServer` never inspects the value.
   """
-  @callback send_command(connection :: term(), {byte(), binary()}) ::
+  @callback send_command(connection :: term(), encoded :: term()) ::
               :ok | {:error, term()}
 
   @doc """
@@ -63,10 +69,10 @@ defmodule Loupey.Driver do
               {driver_state :: term(), [Loupey.Events.t()]}
 
   @doc """
-  Encode a render command into `{command_byte, payload_binary}` ready for
-  `send_command/2`.
+  Encode a render command into a driver-opaque shape that `send_command/2`
+  knows how to ship. The shape is paired per driver — see `send_command/2`.
   """
-  @callback encode(Loupey.RenderCommands.t()) :: {byte(), binary()}
+  @callback encode(Loupey.RenderCommands.t()) :: term()
 
   @doc """
   Encode a refresh-display command. Only implemented by drivers whose protocol

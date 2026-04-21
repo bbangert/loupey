@@ -6,7 +6,7 @@ defmodule Loupey.Device.Display do
   renderable surface on a device.
   """
 
-  @type pixel_format :: :rgb565 | :rgb888 | :jpeg
+  @type pixel_format :: :rgb565 | :rgb888 | :jpeg | :jpeg_flipped
   @type t :: %__MODULE__{
           width: pos_integer(),
           height: pos_integer(),

@@ -69,7 +69,7 @@ defmodule Loupey.Device.Variant.Classic do
         display: %Display{
           width: @key_size,
           height: @key_size,
-          pixel_format: :jpeg,
+          pixel_format: :jpeg_flipped,
           offset: {col * @key_size, row * @key_size},
           display_id: nil
         }
