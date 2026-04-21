@@ -28,6 +28,7 @@ defmodule Loupey.MixProject do
     [
       # Device communication
       {:circuits_uart, "~> 1.5"},
+      {:hid, github: "lawik/hid"},
       {:image, "~> 0.55.2"},
 
       # Home Assistant
@@ -44,7 +45,13 @@ defmodule Loupey.MixProject do
       {:phoenix_live_dashboard, "~> 0.8"},
       {:esbuild, "~> 0.8", runtime: Mix.env() == :dev},
       {:tailwind, "~> 0.2", runtime: Mix.env() == :dev},
-      {:heroicons, github: "tailwindlabs/heroicons", tag: "v2.1.1", sparse: "optimized", app: false, compile: false, depth: 1},
+      {:heroicons,
+       github: "tailwindlabs/heroicons",
+       tag: "v2.1.1",
+       sparse: "optimized",
+       app: false,
+       compile: false,
+       depth: 1},
       {:plug_cowboy, "~> 2.7"},
 
       # Database
