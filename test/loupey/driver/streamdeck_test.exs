@@ -98,6 +98,21 @@ defmodule Loupey.Driver.StreamdeckTest do
       assert s == init
       assert events == []
     end
+
+    test "treats any nonzero key byte as pressed (noise-tolerant)" do
+      # Key 0 previously holds value 1 (pressed). A follow-up report
+      # carries value 2 on the same key — still pressed. The parse should
+      # emit no event and not raise, since both normalize to the same
+      # pressed-state. Regression for a FunctionClauseError that bit us
+      # when the diff used raw byte values.
+      init = %{state() | keys: <<1, 0::size(14)-unit(8)>>}
+      report = input_report(<<2, 0::size(14)-unit(8)>>)
+      {s, events} = Streamdeck.parse(init, report)
+      assert events == []
+      # State is updated to the new bytes (contents don't matter, they'll
+      # be normalized on the next diff).
+      assert s.keys == <<2, 0::size(14)-unit(8)>>
+    end
   end
 
   describe "encode/1 — DrawBuffer" do

@@ -20,7 +20,7 @@ defmodule Loupey.Graphics.FormatTest do
     end
   end
 
-  describe "to_jpeg_flipped/2" do
+  describe "to_jpeg_flipped/1" do
     test "produces a valid JPEG (SOI / EOI markers)" do
       image = Image.new!(8, 8, color: "#C86432")
       bytes = Format.to_jpeg_flipped(image)
@@ -36,7 +36,9 @@ defmodule Loupey.Graphics.FormatTest do
       image = Image.new!(16, 8, color: "#336699")
       rotated = Operation.rot!(image, :VIPS_ANGLE_D180)
 
-      assert Format.to_jpeg_flipped(image) == Format.to_jpeg(rotated, 80)
+      # Both default to quality 90; asserting equality proves the rotation
+      # happens before (not after) the encode and that defaults are aligned.
+      assert Format.to_jpeg_flipped(image) == Format.to_jpeg(rotated)
     end
 
     test "differs from to_jpeg output for an asymmetric image (rotation did something)" do

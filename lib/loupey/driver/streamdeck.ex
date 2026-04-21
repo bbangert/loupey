@@ -106,14 +106,19 @@ defmodule Loupey.Driver.Streamdeck do
     end)
   end
 
+  # Normalize each key byte to a boolean pressed-state before diffing, so
+  # stray nonzero→nonzero transitions (noise / malformed reports) collapse
+  # to `true → true` and are filtered out rather than raising.
   defp diff_keys(prev, curr) do
-    for n <- 0..(@key_count - 1),
-        (p = :binary.at(prev, n)) != (c = :binary.at(curr, n)),
-        do: press_event(n, p, c)
+    for n <- 0..(@key_count - 1), pressed?(prev, n) != pressed?(curr, n) do
+      %PressEvent{
+        control_id: {:key, n},
+        action: if(pressed?(curr, n), do: :press, else: :release)
+      }
+    end
   end
 
-  defp press_event(n, 0, c) when c > 0, do: %PressEvent{control_id: {:key, n}, action: :press}
-  defp press_event(n, _, 0), do: %PressEvent{control_id: {:key, n}, action: :release}
+  defp pressed?(bytes, n), do: :binary.at(bytes, n) > 0
 
   defp clamp_unit(x) when is_number(x) and x <= 0, do: 0.0
   defp clamp_unit(x) when is_number(x) and x >= 1, do: 1.0

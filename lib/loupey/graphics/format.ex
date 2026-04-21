@@ -47,10 +47,11 @@ defmodule Loupey.Graphics.Format do
   @doc """
   Convert a Vix image to JPEG after rotating 180°. The Elgato Stream Deck
   family mounts its LCDs upside-down relative to the user, so images written
-  to the device have to be flipped before encoding.
+  to the device have to be flipped before encoding. Aside from the rotation,
+  uses the same JPEG encoding defaults as `to_jpeg/2`.
   """
   @spec to_jpeg_flipped(Vips.Image.t(), pos_integer()) :: binary()
-  def to_jpeg_flipped(image, quality \\ 80) do
+  def to_jpeg_flipped(image, quality \\ 90) do
     image
     |> Vips.Operation.rot!(:VIPS_ANGLE_D180)
     |> to_jpeg(quality)
