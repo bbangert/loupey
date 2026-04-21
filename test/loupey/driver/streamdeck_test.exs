@@ -205,7 +205,7 @@ defmodule Loupey.Driver.StreamdeckTest do
   end
 
   describe "encode/1 — SetLED" do
-    test "returns :unsupported (MK.2 has no separate LEDs)" do
+    test "returns :unsupported (Classic family has no separate LEDs)" do
       assert :unsupported = Streamdeck.encode(%SetLED{control_id: {:key, 0}, color: "#FF0000"})
     end
   end

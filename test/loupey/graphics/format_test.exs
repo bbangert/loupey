@@ -43,10 +43,11 @@ defmodule Loupey.Graphics.FormatTest do
 
     test "differs from to_jpeg output for an asymmetric image (rotation did something)" do
       # A solid-color image would be rotation-invariant at the pixel level,
-      # so use something asymmetric. A 4×2 image with a red pixel-strip on
-      # the left is not rotationally symmetric.
+      # so use something asymmetric: an 8×8 black background with a 4×8
+      # white block composited over the left half. A 180° rotation moves
+      # the white block to the right half, so the JPEG bytes must differ
+      # from the non-rotated encode.
       image = Image.new!(8, 8, color: "#000000")
-      # Stamp a solid white 4×8 block on the left half to make it asymmetric
       white = Image.new!(4, 8, color: "#FFFFFF")
       composed = Operation.composite2!(image, white, :VIPS_BLEND_MODE_OVER, x: 0, y: 0)
 
