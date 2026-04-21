@@ -242,7 +242,10 @@ defmodule Loupey.Bindings.YamlParser do
   )
 
   defp atomize_value(%{} = map), do: atomize_keys(map)
-  defp atomize_value(value) when is_binary(value) and value in @known_atoms, do: String.to_atom(value)
+
+  defp atomize_value(value) when is_binary(value) and value in @known_atoms,
+    do: String.to_atom(value)
+
   defp atomize_value(value), do: value
 
   defp resolve_inputs(map, input_values) when is_map(map) do

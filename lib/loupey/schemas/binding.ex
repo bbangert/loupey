@@ -12,11 +12,11 @@ defmodule Loupey.Schemas.Binding do
   alias Loupey.Schemas.Layout
 
   schema "bindings" do
-    field :control_id, :string
-    field :entity_id, :string
-    field :yaml, :string
+    field(:control_id, :string)
+    field(:entity_id, :string)
+    field(:yaml, :string)
 
-    belongs_to :layout, Layout
+    belongs_to(:layout, Layout)
 
     timestamps()
   end

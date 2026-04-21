@@ -20,7 +20,12 @@ defmodule Loupey.Bindings.Rules do
   Each action map has at minimum an `:action` key ("call_service" or "switch_layout")
   plus action-specific params (`:domain`, `:service`, `:target`, etc.).
   """
-  @spec match_input(Loupey.Events.t(), Binding.t(), EntityState.t() | nil, Loupey.Device.Control.t() | nil) ::
+  @spec match_input(
+          Loupey.Events.t(),
+          Binding.t(),
+          EntityState.t() | nil,
+          Loupey.Device.Control.t() | nil
+        ) ::
           {:actions, [map()]} | :no_match
   def match_input(event, binding, entity_state, control \\ nil)
 

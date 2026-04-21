@@ -7,7 +7,8 @@ defmodule Loupey.Bindings.InputRule do
   actions (call_service, switch_layout, etc.).
   """
 
-  @type trigger :: :press | :release | :rotate_cw | :rotate_ccw | :touch_start | :touch_move | :touch_end
+  @type trigger ::
+          :press | :release | :rotate_cw | :rotate_ccw | :touch_start | :touch_move | :touch_end
 
   @type t :: %__MODULE__{
           on: trigger(),

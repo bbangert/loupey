@@ -8,11 +8,11 @@ defmodule Loupey.Schemas.Layout do
   alias Loupey.Schemas.{Binding, Profile}
 
   schema "layouts" do
-    field :name, :string
-    field :position, :integer, default: 0
+    field(:name, :string)
+    field(:position, :integer, default: 0)
 
-    belongs_to :profile, Profile
-    has_many :bindings, Binding
+    belongs_to(:profile, Profile)
+    has_many(:bindings, Binding)
 
     timestamps()
   end

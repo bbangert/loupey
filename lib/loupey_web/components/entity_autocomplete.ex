@@ -127,5 +127,7 @@ defmodule LoupeyWeb.EntityAutocomplete do
 
   defp filter_by_domain(ids, nil), do: ids
   defp filter_by_domain(ids, ""), do: ids
-  defp filter_by_domain(ids, domain), do: Enum.filter(ids, &String.starts_with?(&1, domain <> "."))
+
+  defp filter_by_domain(ids, domain),
+    do: Enum.filter(ids, &String.starts_with?(&1, domain <> "."))
 end

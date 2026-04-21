@@ -9,7 +9,7 @@ defmodule Loupey.Settings do
   alias Loupey.Schemas.HAConfig
 
   def get_active_ha_config do
-    Repo.one(from c in HAConfig, where: c.active == true, limit: 1)
+    Repo.one(from(c in HAConfig, where: c.active == true, limit: 1))
   end
 
   def get_ha_config(id), do: Repo.get(HAConfig, id)

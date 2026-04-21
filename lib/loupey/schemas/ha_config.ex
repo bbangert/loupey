@@ -6,10 +6,10 @@ defmodule Loupey.Schemas.HAConfig do
   import Ecto.Changeset
 
   schema "ha_configs" do
-    field :url, :string
-    field :token, :string
-    field :name, :string, default: "default"
-    field :active, :boolean, default: true
+    field(:url, :string)
+    field(:token, :string)
+    field(:name, :string, default: "default")
+    field(:active, :boolean, default: true)
 
     timestamps()
   end

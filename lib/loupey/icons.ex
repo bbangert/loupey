@@ -41,9 +41,14 @@ defmodule Loupey.Icons do
     full_path = Path.join(base_dir, relative)
 
     cond do
-      File.dir?(full_path) -> scan_dir_recursive(base_dir, relative)
-      image_file?(entry) -> [%{name: Path.rootname(entry), path: Path.join("icons", relative), relative: relative}]
-      true -> []
+      File.dir?(full_path) ->
+        scan_dir_recursive(base_dir, relative)
+
+      image_file?(entry) ->
+        [%{name: Path.rootname(entry), path: Path.join("icons", relative), relative: relative}]
+
+      true ->
+        []
     end
   end
 

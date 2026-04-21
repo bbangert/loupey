@@ -484,7 +484,12 @@ defmodule LoupeyWeb.BindingFormComponent do
   def handle_event("add_input_rule", _params, socket) do
     form_data = socket.assigns.form_data
     default_trigger = socket.assigns[:control] |> trigger_options_for() |> hd() |> elem(1)
-    new_rule = %{on: default_trigger, actions: [%{action: "call_service", domain: "", service: "", target: ""}]}
+
+    new_rule = %{
+      on: default_trigger,
+      actions: [%{action: "call_service", domain: "", service: "", target: ""}]
+    }
+
     form_data = %{form_data | input_rules: form_data.input_rules ++ [new_rule]}
     {:noreply, assign(socket, form_data: form_data)}
   end
@@ -638,7 +643,9 @@ defmodule LoupeyWeb.BindingFormComponent do
   # -- Form update helpers --
 
   defp update_action_service_data(action, nil), do: action
-  defp update_action_service_data(action, sd), do: Map.put(action, :service_data, parse_service_data(sd))
+
+  defp update_action_service_data(action, sd),
+    do: Map.put(action, :service_data, parse_service_data(sd))
 
   defp update_output_rule(rule, params) do
     rule
@@ -755,7 +762,9 @@ defmodule LoupeyWeb.BindingFormComponent do
 
         rules =
           List.update_at(form_data.input_rules, ridx, fn rule ->
-            actions = List.update_at(rule.actions, aidx, &set_action_target(&1, entity_id, domain))
+            actions =
+              List.update_at(rule.actions, aidx, &set_action_target(&1, entity_id, domain))
+
             %{rule | actions: actions}
           end)
 
@@ -773,8 +782,15 @@ defmodule LoupeyWeb.BindingFormComponent do
 
     []
     |> add_if(MapSet.member?(caps, :press), [{"Press", "press"}, {"Release", "release"}])
-    |> add_if(MapSet.member?(caps, :rotate), [{"Rotate CW", "rotate_cw"}, {"Rotate CCW", "rotate_ccw"}])
-    |> add_if(MapSet.member?(caps, :touch), [{"Touch Start", "touch_start"}, {"Touch Move", "touch_move"}, {"Touch End", "touch_end"}])
+    |> add_if(MapSet.member?(caps, :rotate), [
+      {"Rotate CW", "rotate_cw"},
+      {"Rotate CCW", "rotate_ccw"}
+    ])
+    |> add_if(MapSet.member?(caps, :touch), [
+      {"Touch Start", "touch_start"},
+      {"Touch Move", "touch_move"},
+      {"Touch End", "touch_end"}
+    ])
   end
 
   defp add_if(list, true, items), do: list ++ items
@@ -857,5 +873,4 @@ defmodule LoupeyWeb.BindingFormComponent do
 
   defp get_text_color(%{color: c}) when not is_nil(c), do: c
   defp get_text_color(_), do: "#ffffff"
-
 end

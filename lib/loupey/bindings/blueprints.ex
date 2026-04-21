@@ -53,12 +53,14 @@ defmodule Loupey.Bindings.Blueprints do
 
     case YamlParser.load_blueprint(path) do
       {:ok, blueprint} ->
-        [%{
-          id: id,
-          name: blueprint.name,
-          description: blueprint.description,
-          inputs: blueprint.inputs
-        }]
+        [
+          %{
+            id: id,
+            name: blueprint.name,
+            description: blueprint.description,
+            inputs: blueprint.inputs
+          }
+        ]
 
       _ ->
         []
@@ -105,6 +107,7 @@ defmodule Loupey.Bindings.Blueprints do
     |> Enum.flat_map(fn
       {key, %{} = map} ->
         ["#{prefix}#{key}:"] ++ Enum.flat_map(map, &nested_yaml_line("#{prefix}  ", &1))
+
       {key, value} ->
         [yaml_value_line(prefix, key, value)]
     end)
@@ -121,8 +124,10 @@ defmodule Loupey.Bindings.Blueprints do
         Enum.flat_map(rule.instructions, fn
           {:text, %{} = text} ->
             ["    text:"] ++ Enum.flat_map(text, &nested_yaml_line("      ", &1))
+
           {:fill, %{} = fill} ->
             ["    fill:"] ++ Enum.flat_map(fill, &nested_yaml_line("      ", &1))
+
           {key, value} ->
             [yaml_value_line("    ", key, value)]
         end)

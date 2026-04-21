@@ -51,7 +51,10 @@ defmodule Loupey.HA.Events do
   def handle_info({:hassock_cache, _cache, {:changes, changes}}, pubsub) do
     %{added: added, changed: changed} = changes
     for {entity_id, new_state} <- added, do: broadcast(pubsub, entity_id, new_state, nil)
-    for {entity_id, new_state, old_state} <- changed, do: broadcast(pubsub, entity_id, new_state, old_state)
+
+    for {entity_id, new_state, old_state} <- changed,
+        do: broadcast(pubsub, entity_id, new_state, old_state)
+
     {:noreply, pubsub}
   end
 

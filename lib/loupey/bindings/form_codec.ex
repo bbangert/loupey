@@ -113,12 +113,17 @@ defmodule Loupey.Bindings.FormCodec do
   defp put_if_present_int(map, _key, nil), do: map
   defp put_if_present_int(map, _key, ""), do: map
   defp put_if_present_int(map, key, value) when is_integer(value), do: Map.put(map, key, value)
-  defp put_if_present_int(map, key, value) when is_binary(value), do: Map.put(map, key, String.to_integer(value))
+
+  defp put_if_present_int(map, key, value) when is_binary(value),
+    do: Map.put(map, key, String.to_integer(value))
+
   defp put_if_present_int(map, key, value), do: Map.put(map, key, value)
 
   defp put_if_present_map(map, _key, nil), do: map
   defp put_if_present_map(map, _key, data) when data == %{}, do: map
-  defp put_if_present_map(map, key, data) when is_map(data), do: Map.put(map, key, stringify_map(data))
+
+  defp put_if_present_map(map, key, data) when is_map(data),
+    do: Map.put(map, key, stringify_map(data))
 
   defp stringify_map(map), do: Map.new(map, fn {k, v} -> {to_string(k), to_string(v)} end)
 

@@ -64,14 +64,16 @@ defmodule Loupey.Bindings.LayoutEngine do
   defp clear_control(%Control{display: %{} = display} = control) do
     pixels = Renderer.render_solid(control, :black)
 
-    [%DrawBuffer{
-      control_id: control.id,
-      x: 0,
-      y: 0,
-      width: display.width,
-      height: display.height,
-      pixels: pixels
-    }] ++ clear_led(control)
+    [
+      %DrawBuffer{
+        control_id: control.id,
+        x: 0,
+        y: 0,
+        width: display.width,
+        height: display.height,
+        pixels: pixels
+      }
+    ] ++ clear_led(control)
   end
 
   defp clear_control(control), do: clear_led(control)
@@ -109,8 +111,8 @@ defmodule Loupey.Bindings.LayoutEngine do
 
   defp binding_references_entity?(binding, entity_id) do
     # Check direct entity_id (backward compat)
+    # Check output rule expressions for state_of("entity_id")
     binding.entity_id == entity_id ||
-      # Check output rule expressions for state_of("entity_id")
       Enum.any?(binding.output_rules, fn rule ->
         references_entity_in_rule?(rule, entity_id)
       end)

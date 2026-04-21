@@ -64,7 +64,9 @@ defmodule LoupeyWeb.ConditionBuilder do
   end
 
   # Parse an expression string back into builder fields
-  defp parse_expression("true"), do: %{entity: "", property: "state", operator: "==", compare_value: "", raw: false}
+  defp parse_expression("true"),
+    do: %{entity: "", property: "state", operator: "==", compare_value: "", raw: false}
+
   defp parse_expression(""), do: nil
 
   defp parse_expression(expr) do
@@ -88,9 +90,19 @@ defmodule LoupeyWeb.ConditionBuilder do
   end
 
   defp parse_attr_of_expr(expr) do
-    case Regex.run(~r/^attr_of\("([^"]+)",\s*"([^"]+)"\)\s*(==|!=|>|<|=~)\s*"?([^"]*)"?\s*$/, expr) do
+    case Regex.run(
+           ~r/^attr_of\("([^"]+)",\s*"([^"]+)"\)\s*(==|!=|>|<|=~)\s*"?([^"]*)"?\s*$/,
+           expr
+         ) do
       [_, entity, attr, op, value] ->
-        %{entity: entity, property: "attribute", operator: op, compare_value: value, attr_name: attr, raw: false}
+        %{
+          entity: entity,
+          property: "attribute",
+          operator: op,
+          compare_value: value,
+          attr_name: attr,
+          raw: false
+        }
 
       nil ->
         :error
@@ -235,7 +247,9 @@ defmodule LoupeyWeb.ConditionBuilder do
 
   def handle_event("entity_search", %{"value" => query}, socket) do
     matches = search_entities(query)
-    {:noreply, assign(socket, entity: query, entity_matches: matches, show_entity_dropdown: matches != [])}
+
+    {:noreply,
+     assign(socket, entity: query, entity_matches: matches, show_entity_dropdown: matches != [])}
   end
 
   def handle_event("entity_focus", _params, socket) do
