@@ -6,11 +6,10 @@ defmodule LoupeyWeb.ProfilesLive do
   @impl true
   def mount(_params, _session, socket) do
     profiles = Profiles.list_profiles()
-    devices = Loupey.Devices.discover()
 
     device_types =
-      devices
-      |> Enum.map(fn {driver, _tty} -> driver.device_spec().type end)
+      Loupey.Devices.all_device_specs()
+      |> Enum.map(& &1.type)
       |> Enum.uniq()
 
     {:ok,
@@ -19,7 +18,7 @@ defmodule LoupeyWeb.ProfilesLive do
        device_types: device_types,
        show_new_form: false,
        new_name: "",
-       new_device_type: List.first(device_types) || "Loupedeck Live"
+       new_device_type: List.first(device_types)
      )}
   end
 

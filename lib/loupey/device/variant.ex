@@ -9,11 +9,6 @@ defmodule Loupey.Device.Variant do
   @callback is_variant?(device_info :: map) :: boolean
 
   @doc """
-  Return variant specific device information as a legacy map.
-  """
-  @callback device_info() :: map
-
-  @doc """
   Return a `Loupey.Device.Spec` describing this device's controls and capabilities.
   """
   @callback device_spec() :: Loupey.Device.Spec.t()

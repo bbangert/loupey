@@ -2,13 +2,16 @@ defmodule Loupey.DeviceServer do
   @moduledoc """
   GenServer that manages a single connected device.
 
-  This is a thin wrapper around a `Loupey.Driver` implementation. It:
-  - Connects to the device via the driver
-  - Parses incoming raw data into normalized `Loupey.Events` and broadcasts via PubSub
-  - Accepts `Loupey.RenderCommands`, encodes them via the driver, and sends to the device
+  Transport-agnostic. The driver owns the entire I/O stack (UART, USB-HID,
+  …), all framing, and any protocol-specific state (transaction IDs,
+  chunking, keep-alives). This server:
 
-  All protocol logic lives in the driver module. All business logic lives in the
-  binding engine (M3). This server is just the I/O boundary.
+  - Asks the driver to `open/2` a connection (passing itself as `:parent`)
+  - Receives `{:device_data, bytes}` messages that the driver forwards
+    from its transport, calls `driver.parse/2`, and broadcasts normalized
+    `Loupey.Events` via PubSub
+  - Accepts `Loupey.RenderCommands`, asks the driver to `encode/1` them,
+    and hands the encoded bytes back to `driver.send_command/2`
   """
 
   use GenServer
@@ -21,9 +24,7 @@ defmodule Loupey.DeviceServer do
       :connection,
       :driver_state,
       :spec,
-      :device_id,
-      transaction_id: 0,
-      pending_transactions: %{}
+      :device_id
     ]
   end
 
@@ -42,14 +43,6 @@ defmodule Loupey.DeviceServer do
   @spec render(term(), Loupey.RenderCommands.t()) :: :ok
   def render(device_id, command) do
     GenServer.cast(via_tuple(device_id), {:render, command})
-  end
-
-  @doc """
-  Send a render command and refresh the display.
-  """
-  @spec render_and_refresh(term(), Loupey.RenderCommands.t(), binary()) :: :ok
-  def render_and_refresh(device_id, command, display_id) do
-    GenServer.cast(via_tuple(device_id), {:render_and_refresh, command, display_id})
   end
 
   @doc """
@@ -77,7 +70,7 @@ defmodule Loupey.DeviceServer do
 
   @impl true
   def init({driver_module, tty, device_id}) do
-    case driver_module.connect(tty) do
+    case driver_module.open(tty, parent: self()) do
       {:ok, connection} ->
         spec = driver_module.device_spec()
 
@@ -109,23 +102,22 @@ defmodule Loupey.DeviceServer do
 
   @impl true
   def handle_cast({:render, command}, state) do
-    send_command(state, command)
-    {:noreply, state}
-  end
-
-  def handle_cast({:render_and_refresh, command, display_id}, state) do
-    send_command(state, command)
-    send_encoded(state, state.driver_module.encode_refresh(display_id))
+    encoded = state.driver_module.encode(command)
+    _ = state.driver_module.send_command(state.connection, encoded)
     {:noreply, state}
   end
 
   def handle_cast({:refresh, display_id}, state) do
-    send_encoded(state, state.driver_module.encode_refresh(display_id))
+    if function_exported?(state.driver_module, :encode_refresh, 1) do
+      encoded = state.driver_module.encode_refresh(display_id)
+      _ = state.driver_module.send_command(state.connection, encoded)
+    end
+
     {:noreply, state}
   end
 
   @impl true
-  def handle_info({:circuits_uart, _tty, data}, state) when is_binary(data) do
+  def handle_info({:device_data, data}, state) when is_binary(data) do
     {driver_state, events} = state.driver_module.parse(state.driver_state, data)
     state = %{state | driver_state: driver_state}
 
@@ -144,7 +136,7 @@ defmodule Loupey.DeviceServer do
   @impl true
   def terminate(_reason, state) do
     try do
-      state.driver_module.disconnect(state.connection)
+      state.driver_module.close(state.connection)
     catch
       _, _ -> :ok
     end
@@ -152,52 +144,11 @@ defmodule Loupey.DeviceServer do
     :ok
   end
 
-  # -- Internals --
-
-  defp send_command(state, command) do
-    {cmd_byte, payload} = state.driver_module.encode(command)
-    buffer = format_message(next_tid(state), cmd_byte, payload)
-    write_framed(state.connection, buffer)
-  end
-
-  defp send_encoded(state, {cmd_byte, payload}) do
-    buffer = format_message(next_tid(state), cmd_byte, payload)
-    write_framed(state.connection, buffer)
-  end
-
-  defp next_tid(state) do
-    rem(state.transaction_id + 1, 256) |> max(1)
-  end
-
-  defp format_message(transaction_id, command, data) when is_binary(data) do
-    <<min(3 + byte_size(data), 0xFF)::8, command, transaction_id, data::binary>>
-  end
-
-  defp format_message(transaction_id, command, data) do
-    <<4, command, transaction_id, data>>
-  end
-
-  defp write_framed(%{uart_pid: uart_pid} = _conn, buffer) when byte_size(buffer) <= 0xFF do
-    Circuits.UART.write(uart_pid, [<<0x82, 0x80 + byte_size(buffer), 0x00::32>>, buffer])
-  end
-
-  defp write_framed(%{uart_pid: uart_pid} = conn, buffer) do
-    header = <<0x82, 0xFF, 0x00::32, byte_size(buffer)::unsigned-integer-32, 0x00::32>>
-    Circuits.UART.write(uart_pid, header)
-    write_chunks(conn, buffer)
-  end
-
-  defp write_chunks(%{uart_pid: uart_pid}, buffer) when byte_size(buffer) <= 15_300 do
-    Circuits.UART.write(uart_pid, buffer)
-  end
-
-  defp write_chunks(%{uart_pid: uart_pid} = conn, buffer) do
-    <<chunk::binary-size(15_300), rest::binary>> = buffer
-    Circuits.UART.write(uart_pid, chunk)
-    if byte_size(rest) > 0, do: write_chunks(conn, rest)
-  end
-
   defp broadcast_event(device_id, event) do
-    Phoenix.PubSub.broadcast(Loupey.PubSub, "device:#{device_id}", {:device_event, device_id, event})
+    Phoenix.PubSub.broadcast(
+      Loupey.PubSub,
+      "device:#{device_id}",
+      {:device_event, device_id, event}
+    )
   end
 end

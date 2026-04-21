@@ -32,27 +32,9 @@ defmodule Loupey.Device.Variant.Live do
   def device_spec do
     %Spec{
       type: "Loupedeck Live",
-      controls: knob_controls() ++ button_controls() ++ key_controls() ++ strip_controls() ++ misc_button_controls()
-    }
-  end
-
-  # Legacy device_info for backward compatibility during migration
-  @impl true
-  def device_info do
-    %{
-      type: "Loupedeck Live",
-      key_size: @key_size,
-      keys: 0..(@columns * @rows - 1),
-      buttons: [0, 1, 2, 3, 4, 5, 6, 7],
-      knobs: ["knobCL", "knobCR", "knobTL", "knobTR", "knobBL", "knobBR"],
-      columns: @columns,
-      rows: @rows,
-      displays: %{
-        center: %{id: @display_id, width: @display_center_width, height: @display_height, offset: {60, 0}},
-        left: %{id: @display_id, width: @display_left_width, height: @display_height},
-        right: %{id: @display_id, width: @display_right_width, height: @display_height, offset: {420, 0}}
-      },
-      visible_x: {0, 480}
+      controls:
+        knob_controls() ++
+          button_controls() ++ key_controls() ++ strip_controls() ++ misc_button_controls()
     }
   end
 
@@ -140,6 +122,7 @@ defmodule Loupey.Device.Variant.Live do
 
   defp misc_button_controls do
     misc = [:home, :undo, :keyboard, :enter, :save, :fn_l, :a, :c, :fn_r, :b, :d, :e]
+
     Enum.map(misc, fn id ->
       %Control{id: id, capabilities: MapSet.new([:press])}
     end)
