@@ -121,12 +121,12 @@ defmodule Loupey.Orchestrator do
   defp do_connect_all_devices do
     results = Devices.connect_all()
 
-    case Profiles.get_active_profile() do
-      nil ->
-        Logger.info("Orchestrator: devices connected, no active profile")
+    case Profiles.list_active_profiles() do
+      [] ->
+        Logger.info("Orchestrator: devices connected, no active profiles")
 
-      profile ->
-        activate_profile_on_devices(profile)
+      profiles ->
+        for profile <- profiles, do: activate_profile_on_devices(profile)
     end
 
     results
@@ -135,14 +135,18 @@ defmodule Loupey.Orchestrator do
   # -- Internal: Profile Lifecycle --
 
   defp do_activate_profile(profile_id) do
-    # Deactivate all profiles first
-    for p <- Profiles.list_profiles(), p.active do
-      do_deactivate_profile(p.id)
-    end
-
     profile = Profiles.get_profile(profile_id)
 
     if profile do
+      # Deactivate any other active profile that targets the SAME device type.
+      # Profiles for other device types stay active — one profile per device
+      # type can run simultaneously.
+      for p <- Profiles.list_active_profiles(),
+          p.device_type == profile.device_type,
+          p.id != profile.id do
+        do_deactivate_profile(p.id)
+      end
+
       Profiles.update_profile(profile, %{"active" => true})
       profile = Profiles.get_profile(profile_id)
       activate_profile_on_devices(profile)
@@ -156,7 +160,7 @@ defmodule Loupey.Orchestrator do
     profile = Profiles.get_profile(profile_id)
 
     if profile do
-      stop_all_engines()
+      stop_engines_for(profile.device_type)
       Profiles.update_profile(profile, %{"active" => false})
       :ok
     else
@@ -165,10 +169,11 @@ defmodule Loupey.Orchestrator do
   end
 
   defp do_reload_active_profile do
-    case Profiles.get_active_profile() do
-      nil -> :ok
-      profile -> activate_profile_on_devices(profile)
+    for profile <- Profiles.list_active_profiles() do
+      activate_profile_on_devices(profile)
     end
+
+    :ok
   end
 
   defp activate_profile_on_devices(profile) do
@@ -213,8 +218,14 @@ defmodule Loupey.Orchestrator do
     end
   end
 
-  defp stop_all_engines do
-    for {_driver, tty} <- Devices.discover() do
+  # Stop engines only for devices of the given device type — leaves engines
+  # for other device types running so a multi-device setup isn't torn down
+  # when deactivating a single profile.
+  defp stop_engines_for(device_type) do
+    for {_driver, tty} <- Devices.discover(),
+        spec = safe_get_spec(tty),
+        spec != nil,
+        spec.type == device_type do
       stop_engine(tty)
     end
   end
@@ -278,11 +289,14 @@ defmodule Loupey.Orchestrator do
         }
       end)
 
-    active_profile = Profiles.get_active_profile()
+    active_profiles =
+      for p <- Profiles.list_active_profiles() do
+        %{id: p.id, name: p.name, device_type: p.device_type}
+      end
 
     %{
       devices: connected_devices,
-      active_profile: active_profile && %{id: active_profile.id, name: active_profile.name}
+      active_profiles: active_profiles
     }
   end
 

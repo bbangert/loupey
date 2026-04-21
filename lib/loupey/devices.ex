@@ -4,9 +4,18 @@ defmodule Loupey.Devices do
 
   Provides functions to discover connected devices, start device servers
   under the dynamic supervisor, and subscribe to device events.
+
+  Supports two transports:
+
+  - `Circuits.UART` enumeration for Loupedeck (WebSocket-over-UART).
+  - `HID.enumerate/0` for Elgato Stream Deck and other HID devices.
+
+  Each registered driver provides `matches?/1` which is called with a map
+  containing `:vendor_id` and `:product_id` (plus other transport-specific
+  fields). The first driver that matches owns the device.
   """
 
-  @drivers [Loupey.Driver.Loupedeck]
+  @drivers [Loupey.Driver.Loupedeck, Loupey.Driver.Streamdeck]
 
   @doc """
   Return all registered driver modules.
@@ -30,19 +39,33 @@ defmodule Loupey.Devices do
   def all_device_specs, do: Enum.map(@drivers, & &1.device_spec())
 
   @doc """
-  Discover all supported devices currently connected.
+  Discover all supported devices currently connected across UART and HID
+  transports.
 
-  Returns a list of `{driver_module, tty}` tuples for each matched device.
+  Returns a list of `{driver_module, device_ref}` tuples. `device_ref` is
+  the transport-specific identifier passed to `driver.open/2` — a tty
+  path for UART devices, a hidraw path (e.g. `/dev/hidraw10`) for HID.
   """
   @spec discover() :: [{module(), String.t()}]
   def discover do
+    uart_matches() ++ hid_matches()
+  end
+
+  defp uart_matches do
     Circuits.UART.enumerate()
-    |> Enum.flat_map(fn {tty, info} ->
-      case Enum.find(@drivers, & &1.matches?(info)) do
-        nil -> []
-        driver -> [{driver, tty}]
-      end
-    end)
+    |> Enum.flat_map(fn {tty, info} -> find_driver(info, tty) end)
+  end
+
+  defp hid_matches do
+    HID.enumerate()
+    |> Enum.flat_map(fn info -> find_driver(info, info.path) end)
+  end
+
+  defp find_driver(info, device_ref) do
+    case Enum.find(@drivers, & &1.matches?(info)) do
+      nil -> []
+      driver -> [{driver, device_ref}]
+    end
   end
 
   @doc """

@@ -11,7 +11,7 @@ defmodule Loupey.Profiles do
   # -- Profiles --
 
   def list_profiles do
-    Repo.all(from p in Profile, order_by: [desc: p.updated_at])
+    Repo.all(from(p in Profile, order_by: [desc: p.updated_at]))
   end
 
   def get_profile(id) do
@@ -20,9 +20,24 @@ defmodule Loupey.Profiles do
     |> Repo.preload(layouts: [bindings: []])
   end
 
-  def get_active_profile do
+  @doc """
+  Return every profile with `active: true`, one per device type. The
+  uniqueness-per-device-type invariant is enforced by `Orchestrator` on
+  activation (not at the database level).
+  """
+  def list_active_profiles do
     Profile
     |> where(active: true)
+    |> Repo.all()
+    |> Repo.preload(layouts: [bindings: []])
+  end
+
+  @doc """
+  Return the single active profile for a given `device_type`, or `nil`.
+  """
+  def get_active_profile_for(device_type) do
+    Profile
+    |> where([p], p.active == true and p.device_type == ^device_type)
     |> limit(1)
     |> Repo.one()
     |> Repo.preload(layouts: [bindings: []])
@@ -114,11 +129,17 @@ defmodule Loupey.Profiles do
     end
   end
 
-  # Parse control_id strings back to the atom/tuple form used internally
+  # Parse control_id strings back to the atom/tuple form used internally.
+  # Uses `String.to_existing_atom/1` since all legitimate control_ids are
+  # already defined by a variant's `device_spec/0`; a corrupted DB row
+  # with an unknown atom name falls back to the raw string so downstream
+  # `Spec.find_control/2` returns nil and the binding is gracefully skipped.
   defp parse_control_id(str) do
     case Regex.run(~r/^\{:(\w+), (\d+)\}$/, str) do
-      [_, type, num] -> {String.to_atom(type), String.to_integer(num)}
-      _ -> String.to_atom(str)
+      [_, type, num] -> {String.to_existing_atom(type), String.to_integer(num)}
+      _ -> String.to_existing_atom(str)
     end
+  rescue
+    ArgumentError -> str
   end
 end
