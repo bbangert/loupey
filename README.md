@@ -9,7 +9,7 @@ to HA entities through a web UI, and let the device show live state.
 | Vendor  | Device                          | Transport       | Status |
 |---------|---------------------------------|-----------------|--------|
 | Loupedeck | Live (VID `0x2EC2` PID `0x0004`) | UART (CDC / WebSocket) | Supported |
-| Elgato  | Stream Deck MK.2 (`0x00B9`, `0x0080`, `0x00A5`, `0x006D`) | USB HID | Supported |
+| Elgato  | Stream Deck MK.2 (VID `0x0FD9`; PIDs `0x00B9`, `0x0080`, `0x00A5`, `0x006D`) | USB HID | Supported |
 
 The Stream Deck driver covers Elgato's full "Classic" family — MK.2,
 Scissor Keys, 2019, and 15-Key Module — which all share one HID
