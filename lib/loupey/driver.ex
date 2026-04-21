@@ -78,8 +78,11 @@ defmodule Loupey.Driver do
   Encode a refresh-display command. Only implemented by drivers whose protocol
   requires an explicit commit step after writing a framebuffer (e.g. Loupedeck).
   Drivers that update atomically (e.g. Stream Deck) omit this callback.
+
+  Returns a driver-opaque shape — same `term()` pipeline as `encode/1`;
+  `DeviceServer` passes the result straight through to `send_command/2`.
   """
-  @callback encode_refresh(display_id :: binary()) :: {byte(), binary()}
+  @callback encode_refresh(display_id :: binary()) :: term()
 
   @optional_callbacks encode_refresh: 1
 end

@@ -124,11 +124,16 @@ defmodule Loupey.Driver.Streamdeck do
   defp clamp_unit(x) when is_number(x) and x >= 1, do: 1.0
   defp clamp_unit(x) when is_number(x), do: x * 1.0
 
-  defp pad_feature_report(bytes) when byte_size(bytes) >= @feature_report_size, do: bytes
+  defp pad_feature_report(bytes) when byte_size(bytes) == @feature_report_size, do: bytes
 
-  defp pad_feature_report(bytes) do
+  defp pad_feature_report(bytes) when byte_size(bytes) < @feature_report_size do
     pad = @feature_report_size - byte_size(bytes)
     bytes <> :binary.copy(<<0>>, pad)
+  end
+
+  defp pad_feature_report(bytes) do
+    raise ArgumentError,
+          "feature report payload exceeds #{@feature_report_size} bytes: #{byte_size(bytes)}"
   end
 
   defp build_image_packets(key_idx, jpeg) do
