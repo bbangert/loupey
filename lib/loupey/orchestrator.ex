@@ -140,8 +140,9 @@ defmodule Loupey.Orchestrator do
     if profile do
       # Deactivate any other active profile that targets the SAME device type.
       # Profiles for other device types stay active — one profile per device
-      # type can run simultaneously.
-      for p <- Profiles.list_active_profiles(),
+      # type can run simultaneously. Uses the lightweight summaries query
+      # since we only need `id` and `device_type`.
+      for p <- Profiles.list_active_profile_summaries(),
           p.device_type == profile.device_type,
           p.id != profile.id do
         do_deactivate_profile(p.id)
@@ -289,14 +290,9 @@ defmodule Loupey.Orchestrator do
         }
       end)
 
-    active_profiles =
-      for p <- Profiles.list_active_profiles() do
-        %{id: p.id, name: p.name, device_type: p.device_type}
-      end
-
     %{
       devices: connected_devices,
-      active_profiles: active_profiles
+      active_profiles: Profiles.list_active_profile_summaries()
     }
   end
 

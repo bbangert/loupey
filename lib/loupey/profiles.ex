@@ -21,9 +21,9 @@ defmodule Loupey.Profiles do
   end
 
   @doc """
-  Return every profile with `active: true`, one per device type. The
-  uniqueness-per-device-type invariant is enforced by `Orchestrator` on
-  activation (not at the database level).
+  Return every profile with `active: true`, one per device type, with
+  layouts + bindings preloaded. The uniqueness-per-device-type invariant
+  is enforced by `Orchestrator` on activation (not at the database level).
   """
   def list_active_profiles do
     Profile
@@ -33,11 +33,28 @@ defmodule Loupey.Profiles do
   end
 
   @doc """
+  Lightweight variant of `list_active_profiles/0` for status displays and
+  bulk operations that only need identity + device type. Skips the
+  layouts/bindings preload, so it's safe to call frequently.
+  """
+  def list_active_profile_summaries do
+    Profile
+    |> where(active: true)
+    |> select([p], %{id: p.id, name: p.name, device_type: p.device_type})
+    |> Repo.all()
+  end
+
+  @doc """
   Return the single active profile for a given `device_type`, or `nil`.
+
+  If multiple active profiles exist for the same device type (shouldn't
+  happen under normal flow, but isn't enforced at the DB level), the most
+  recently updated one wins so crash recovery is deterministic.
   """
   def get_active_profile_for(device_type) do
     Profile
     |> where([p], p.active == true and p.device_type == ^device_type)
+    |> order_by([p], desc: p.updated_at, desc: p.inserted_at, desc: p.id)
     |> limit(1)
     |> Repo.one()
     |> Repo.preload(layouts: [bindings: []])

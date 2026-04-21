@@ -59,6 +59,16 @@ defmodule Loupey.Devices do
   defp hid_matches do
     HID.enumerate()
     |> Enum.flat_map(fn info -> find_driver(info, info.path) end)
+  rescue
+    e ->
+      require Logger
+
+      Logger.warning(
+        "HID enumeration failed: #{Exception.message(e)} — Stream Deck devices will not be discovered. " <>
+          "Check that libhidapi + libusb are installed (see README)."
+      )
+
+      []
   end
 
   defp find_driver(info, device_ref) do

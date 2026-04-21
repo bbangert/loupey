@@ -20,8 +20,11 @@ and is **not** supported.
 
 ### Erlang / Elixir
 
-Pinned via `.tool-versions` (Erlang 28 / Elixir 1.19). A local
-`mise` or `asdf` should pick this up automatically.
+`mix.exs` constrains Elixir to `~> 1.17`. The project is developed and
+tested on Erlang/OTP 28 + Elixir 1.19. Install a compatible toolchain
+locally — there's no `.tool-versions` committed at the repo root
+(yet), so pick your own `mise` / `asdf` versions within those
+constraints.
 
 ### HID system libraries (for Stream Deck)
 
