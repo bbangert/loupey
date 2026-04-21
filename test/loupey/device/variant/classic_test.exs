@@ -1,44 +1,46 @@
-defmodule Loupey.Device.Variant.Mk2Test do
+defmodule Loupey.Device.Variant.ClassicTest do
   use ExUnit.Case, async: true
 
   alias Loupey.Device.{Control, Spec}
-  alias Loupey.Device.Variant.Mk2
+  alias Loupey.Device.Variant.Classic
 
   describe "is_variant?/1" do
     test "matches each of the four documented Classic-family PIDs" do
       for pid <- [0x0080, 0x00A5, 0x006D, 0x00B9] do
-        assert Mk2.is_variant?(%{vendor_id: 0x0FD9, product_id: pid}),
+        assert Classic.is_variant?(%{vendor_id: 0x0FD9, product_id: pid}),
                "expected PID 0x#{Integer.to_string(pid, 16)} to match"
       end
     end
 
     test "rejects MK.1 (0x0060) — different command set, explicitly out of scope" do
-      refute Mk2.is_variant?(%{vendor_id: 0x0FD9, product_id: 0x0060})
+      refute Classic.is_variant?(%{vendor_id: 0x0FD9, product_id: 0x0060})
     end
 
     test "rejects other Elgato devices" do
-      refute Mk2.is_variant?(%{vendor_id: 0x0FD9, product_id: 0x0001})
+      refute Classic.is_variant?(%{vendor_id: 0x0FD9, product_id: 0x0001})
     end
 
     test "rejects non-Elgato vendors even with matching PID" do
-      refute Mk2.is_variant?(%{vendor_id: 0x2EC2, product_id: 0x00B9})
+      refute Classic.is_variant?(%{vendor_id: 0x2EC2, product_id: 0x00B9})
     end
 
     test "returns false for non-matching device_info shapes" do
-      refute Mk2.is_variant?(%{})
-      refute Mk2.is_variant?(%{vendor_id: 0x0FD9})
-      refute Mk2.is_variant?(nil)
-      refute Mk2.is_variant?("not a map")
+      refute Classic.is_variant?(%{})
+      refute Classic.is_variant?(%{vendor_id: 0x0FD9})
+      refute Classic.is_variant?(nil)
+      refute Classic.is_variant?("not a map")
     end
   end
 
   describe "device_spec/0" do
     setup do
-      %{spec: Mk2.device_spec()}
+      %{spec: Classic.device_spec()}
     end
 
-    test "reports the expected device type", %{spec: spec} do
-      assert spec.type == "Stream Deck MK.2"
+    test "reports a family-wide device type label", %{spec: spec} do
+      # Family label, not a specific model — the variant covers four PIDs
+      # (MK.2, Scissor Keys, 2019, 15-Key Module) that share one command set.
+      assert spec.type == "Stream Deck (Classic)"
     end
 
     test "exposes exactly 15 controls (5×3 grid)", %{spec: spec} do
@@ -84,11 +86,11 @@ defmodule Loupey.Device.Variant.Mk2Test do
 
   describe "vendor_id/0 and product_ids/0" do
     test "exposes Elgato's vendor ID" do
-      assert Mk2.vendor_id() == 0x0FD9
+      assert Classic.vendor_id() == 0x0FD9
     end
 
     test "exposes the four Classic-family PIDs" do
-      assert Mk2.product_ids() == [0x0080, 0x00A5, 0x006D, 0x00B9]
+      assert Classic.product_ids() == [0x0080, 0x00A5, 0x006D, 0x00B9]
     end
   end
 end

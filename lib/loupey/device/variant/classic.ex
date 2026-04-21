@@ -1,4 +1,4 @@
-defmodule Loupey.Device.Variant.Mk2 do
+defmodule Loupey.Device.Variant.Classic do
   @moduledoc """
   Variant configuration for the Elgato Stream Deck "Classic" family — the
   four devices that share one HID command set and the 5×3 72 px key layout:
@@ -14,6 +14,9 @@ defmodule Loupey.Device.Variant.Mk2 do
 
   The MK.1 (`0x0060`) is explicitly NOT part of this family — it uses a
   different command set and is out of scope here.
+
+  `device_spec/0` reports `type: "Stream Deck (Classic)"` — a family label
+  rather than a specific model, since all four PIDs above share this spec.
 
   Physical layout:
   ```
@@ -49,7 +52,7 @@ defmodule Loupey.Device.Variant.Mk2 do
   @impl true
   def device_spec do
     %Spec{
-      type: "Stream Deck MK.2",
+      type: "Stream Deck (Classic)",
       controls: key_controls()
     }
   end
