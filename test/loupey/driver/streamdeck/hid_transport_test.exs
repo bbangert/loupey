@@ -40,6 +40,9 @@ defmodule Loupey.Driver.Streamdeck.HidTransportTest do
 
       receive do
         {^ref, result} -> result
+      after
+        5_000 ->
+          raise "FakeHidPort.read/2 timed out — transport didn't reply to read request within 5s"
       end
     end
 
