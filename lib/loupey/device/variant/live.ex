@@ -6,7 +6,6 @@ defmodule Loupey.Device.Variant.Live do
   @key_size 90
   @columns 4
   @rows 3
-  @display_center_width 360
   @display_left_width 60
   @display_right_width 60
   @display_height 270
@@ -36,17 +35,6 @@ defmodule Loupey.Device.Variant.Live do
         knob_controls() ++
           button_controls() ++ key_controls() ++ strip_controls() ++ misc_button_controls()
     }
-  end
-
-  @impl true
-  def touch_target(x, _y, _id) when x < @display_left_width, do: :left
-  def touch_target(x, _y, _id) when x >= @display_left_width + @display_center_width, do: :right
-
-  def touch_target(x, y, _id) do
-    column = floor((x - @display_left_width) / @key_size)
-    row = floor(y / @key_size)
-    key = row * @columns + column
-    {:center, key}
   end
 
   # -- Control definitions --
