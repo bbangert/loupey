@@ -136,11 +136,20 @@ defmodule LoupeyWeb.DeviceGrid do
   def format_control_id(atom) when is_atom(atom), do: Atom.to_string(atom)
   def format_control_id(other), do: inspect(other)
 
+  # Parse control_id strings (from `phx-value-control` params) back to the
+  # atom/tuple form used internally. Uses `String.to_existing_atom/1` since
+  # all legitimate control_ids are defined by a variant's `device_spec/0`
+  # at compile time; an unexpected or malformed value falls back to the raw
+  # string so downstream `Spec.find_control/2` returns nil and the event is
+  # gracefully ignored. Prevents atom-table exhaustion from arbitrary input
+  # over the LiveView channel. Mirrors `Loupey.Profiles.parse_control_id/1`.
   def parse_control_id(str) do
     case Regex.run(~r/^\{:(\w+), (\d+)\}$/, str) do
-      [_, type, num] -> {String.to_atom(type), String.to_integer(num)}
-      _ -> String.to_atom(str)
+      [_, type, num] -> {String.to_existing_atom(type), String.to_integer(num)}
+      _ -> String.to_existing_atom(str)
     end
+  rescue
+    ArgumentError -> str
   end
 
   defp short_label({:key, n}), do: "K#{n}"
