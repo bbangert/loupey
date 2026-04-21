@@ -90,7 +90,10 @@ defmodule Loupey.Device.Variant.ClassicTest do
     end
 
     test "exposes the four Classic-family PIDs" do
-      assert Classic.product_ids() == [0x0080, 0x00A5, 0x006D, 0x00B9]
+      # Order isn't part of the contract — @product_ids is only consumed by
+      # `pid in @product_ids` in is_variant?/1, so assert set equality.
+      assert MapSet.new(Classic.product_ids()) ==
+               MapSet.new([0x0080, 0x00A5, 0x006D, 0x00B9])
     end
   end
 end
