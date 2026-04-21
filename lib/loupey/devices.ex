@@ -61,14 +61,26 @@ defmodule Loupey.Devices do
     |> Enum.flat_map(fn info -> find_driver(info, info.path) end)
   rescue
     e ->
+      log_hid_failure_once(e)
+      []
+  end
+
+  # `discover/0` is called on every dashboard status poll; logging a warning
+  # on each failed HID enumeration would spam the log and drown other output.
+  # Log the first failure at :warning, then go quiet until the VM restarts.
+  @hid_failure_flag {__MODULE__, :hid_enumerate_failed}
+
+  defp log_hid_failure_once(exception) do
+    unless :persistent_term.get(@hid_failure_flag, false) do
       require Logger
 
       Logger.warning(
-        "HID enumeration failed: #{Exception.message(e)} — Stream Deck devices will not be discovered. " <>
-          "Check that libhidapi + libusb are installed (see README)."
+        "HID enumeration failed: #{Exception.message(exception)} — Stream Deck devices will not be discovered. " <>
+          "Check that libhidapi + libusb are installed (see README). This warning will be logged only once."
       )
 
-      []
+      :persistent_term.put(@hid_failure_flag, true)
+    end
   end
 
   defp find_driver(info, device_ref) do

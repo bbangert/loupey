@@ -145,13 +145,29 @@ defmodule Loupey.Orchestrator do
         # Engines on the affected devices don't need an explicit stop:
         # `start_or_update_engine/2` updates the existing engine in place
         # if one is already running.
-        {:ok, _} = Profiles.activate_exclusive(profile)
+        case Profiles.activate_exclusive(profile) do
+          {:ok, _} ->
+            # Re-fetch so layouts+bindings are preloaded for render wiring.
+            profile = Profiles.get_profile(profile_id)
+            activate_profile_on_devices(profile)
+            {:ok, profile}
 
-        # Re-fetch so layouts+bindings are preloaded for render wiring.
-        profile = Profiles.get_profile(profile_id)
-        activate_profile_on_devices(profile)
-        {:ok, profile}
+          {:error, reason} ->
+            Logger.error(
+              "Orchestrator: activate_exclusive failed for profile #{profile_id}: #{inspect(reason)}"
+            )
+
+            {:error, reason}
+        end
     end
+  rescue
+    exception ->
+      Logger.error(
+        "Orchestrator: unexpected crash activating profile #{profile_id}: " <>
+          Exception.format(:error, exception, __STACKTRACE__)
+      )
+
+      {:error, {:exception, Exception.message(exception)}}
   end
 
   defp do_deactivate_profile(profile_id) do

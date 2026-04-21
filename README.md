@@ -49,9 +49,12 @@ Homebrew, or `rpm-ostree install` + reboot.
 
 ### Running without the Stream Deck driver
 
-If you're only using a Loupedeck, you can omit the HID libraries —
-`HID.enumerate/0` will simply return an empty list and the Stream Deck
-driver will never match any device.
+If you're only using a Loupedeck, you can omit the HID libraries.
+`Loupey.Devices.hid_matches/0` wraps `HID.enumerate/0` in a rescue —
+on the first failure (e.g. missing `libhidapi` / `libusb` at runtime)
+it logs a warning and returns an empty list; subsequent failures stay
+silent, so you won't see repeated log spam on each status poll. The
+Stream Deck driver simply never matches any device.
 
 ## Getting started
 
