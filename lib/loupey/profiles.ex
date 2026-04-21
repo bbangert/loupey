@@ -24,9 +24,11 @@ defmodule Loupey.Profiles do
   Return every profile with `active: true`, with layouts + bindings
   preloaded.
 
-  Under normal operation there should be at most one active profile per
-  device type — that invariant is enforced by `Orchestrator` on
-  activation, not by this query or at the database level.
+  At most one active profile per device type is enforced at two levels:
+  `Loupey.Orchestrator` goes through `activate_exclusive/1` in a
+  transaction, and a partial unique index
+  (`profiles_one_active_per_device_type`) on
+  `(device_type) WHERE active = 1` guards against any bypass path.
   """
   def list_active_profiles do
     Profile
@@ -82,15 +84,18 @@ defmodule Loupey.Profiles do
 
   1. Sets `active: false` on every other row matching the same `device_type`
      (bulk `update_all`, no changeset overhead).
-  2. Sets `active: true` on the target row.
+  2. Sets `active: true` on the target row via a non-bang `Repo.update/1`,
+     rolling back the transaction on error.
 
   Returns `{:ok, %Profile{}}` with the updated record (no layouts+bindings
-  preload — callers that need those should re-fetch via `get_profile/1`).
+  preload — callers that need those should re-fetch via `get_profile/1`),
+  or `{:error, %Ecto.Changeset{}}` if the changeset fails validation or
+  trips the `profiles_one_active_per_device_type` partial unique index.
 
-  This is the only safe way to toggle the active flag: the
-  `Orchestrator`-enforced "one active profile per device type" invariant
-  isn't represented at the DB schema level, so concurrent non-transactional
-  writes could leave duplicates or briefly empty state.
+  This is the only safe way to toggle the active flag. The "one active
+  profile per device type" invariant is enforced at the DB level by that
+  partial unique index and at the application level by the `Orchestrator`
+  GenServer serializing activations.
   """
   def activate_exclusive(%Profile{} = profile) do
     Repo.transaction(fn ->
@@ -101,9 +106,10 @@ defmodule Loupey.Profiles do
       )
       |> Repo.update_all(set: [active: false])
 
-      profile
-      |> Profile.changeset(%{"active" => true})
-      |> Repo.update!()
+      case profile |> Profile.changeset(%{"active" => true}) |> Repo.update() do
+        {:ok, updated} -> updated
+        {:error, changeset} -> Repo.rollback(changeset)
+      end
     end)
   end
 

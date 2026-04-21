@@ -46,7 +46,7 @@ defmodule Loupey.Devices do
   the transport-specific identifier passed to `driver.open/2` — a tty
   path for UART devices, a hidraw path (e.g. `/dev/hidraw10`) for HID.
   """
-  @spec discover() :: [{module(), String.t()}]
+  @spec discover() :: [{module(), term()}]
   def discover do
     uart_matches() ++ hid_matches()
   end
@@ -95,7 +95,7 @@ defmodule Loupey.Devices do
 
   Returns `{:ok, pid}` or `{:error, reason}`.
   """
-  @spec connect(module(), String.t(), keyword()) :: {:ok, pid()} | {:error, term()}
+  @spec connect(module(), term(), keyword()) :: {:ok, pid()} | {:error, term()}
   def connect(driver_module, device_ref, opts \\ []) do
     device_id = Keyword.get(opts, :device_id, device_ref)
 
