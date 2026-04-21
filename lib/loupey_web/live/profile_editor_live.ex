@@ -8,7 +8,6 @@ defmodule LoupeyWeb.ProfileEditorLive do
   """
   use LoupeyWeb, :live_view
 
-  alias Loupey.Driver.Loupedeck, as: LoupedeckDriver
   alias Loupey.Profiles
   alias Loupey.Schemas.Binding
   alias LoupeyWeb.DeviceGrid
@@ -21,30 +20,37 @@ defmodule LoupeyWeb.ProfileEditorLive do
   def mount(%{"id" => id}, _session, socket) do
     profile = Profiles.get_profile(String.to_integer(id))
 
-    if profile do
-      spec = get_device_spec(profile.device_type)
-      layouts = profile.layouts |> Enum.sort_by(& &1.position)
-      active_layout = List.first(layouts)
+    case {profile, profile && get_device_spec(profile.device_type)} do
+      {nil, _} ->
+        {:ok,
+         socket
+         |> put_flash(:error, "Profile not found")
+         |> redirect(to: ~p"/profiles")}
 
-      {:ok,
-       assign(socket,
-         profile: profile,
-         spec: spec,
-         layouts: layouts,
-         active_layout: active_layout,
-         active_bindings: layout_bindings(active_layout),
-         selected_control: nil,
-         editing_binding: nil,
-         show_new_layout: false,
-         entity_search: "",
-         binding_yaml: "",
-         editor_mode: :visual
-       )}
-    else
-      {:ok,
-       socket
-       |> put_flash(:error, "Profile not found")
-       |> redirect(to: ~p"/profiles")}
+      {profile, nil} ->
+        {:ok,
+         socket
+         |> put_flash(:error, "No driver registered for device type \"#{profile.device_type}\"")
+         |> redirect(to: ~p"/profiles")}
+
+      {profile, spec} ->
+        layouts = profile.layouts |> Enum.sort_by(& &1.position)
+        active_layout = List.first(layouts)
+
+        {:ok,
+         assign(socket,
+           profile: profile,
+           spec: spec,
+           layouts: layouts,
+           active_layout: active_layout,
+           active_bindings: layout_bindings(active_layout),
+           selected_control: nil,
+           editing_binding: nil,
+           show_new_layout: false,
+           entity_search: "",
+           binding_yaml: "",
+           editor_mode: :visual
+         )}
     end
   end
 
@@ -256,7 +262,11 @@ defmodule LoupeyWeb.ProfileEditorLive do
   def handle_event("create_layout", %{"name" => name}, socket) do
     position = length(socket.assigns.layouts)
 
-    case Profiles.create_layout(%{"name" => name, "profile_id" => socket.assigns.profile.id, "position" => position}) do
+    case Profiles.create_layout(%{
+           "name" => name,
+           "profile_id" => socket.assigns.profile.id,
+           "position" => position
+         }) do
       {:ok, _} -> {:noreply, reload_profile(socket, :show_new_layout, false)}
       {:error, _} -> {:noreply, put_flash(socket, :error, "Failed to create layout")}
     end
@@ -325,9 +335,11 @@ defmodule LoupeyWeb.ProfileEditorLive do
     {:noreply, elem(do_save_binding(yaml, socket), 1)}
   end
 
-  def handle_event("set_editor_mode", %{"mode" => mode}, socket) do
-    {:noreply, assign(socket, editor_mode: String.to_atom(mode))}
+  def handle_event("set_editor_mode", %{"mode" => mode}, socket) when mode in ~w(visual yaml) do
+    {:noreply, assign(socket, editor_mode: String.to_existing_atom(mode))}
   end
+
+  def handle_event("set_editor_mode", _params, socket), do: {:noreply, socket}
 
   def handle_event("delete_binding", _params, socket) do
     if socket.assigns.editing_binding do
@@ -355,7 +367,11 @@ defmodule LoupeyWeb.ProfileEditorLive do
 
   def handle_info({:entity_selected, "action_target_" <> indices, entity_id}, socket) do
     # Forward to the binding form component via a message
-    send_update(LoupeyWeb.BindingFormComponent, id: "binding_form", action_target_selected: {indices, entity_id})
+    send_update(LoupeyWeb.BindingFormComponent,
+      id: "binding_form",
+      action_target_selected: {indices, entity_id}
+    )
+
     {:noreply, socket}
   end
 
@@ -376,7 +392,11 @@ defmodule LoupeyWeb.ProfileEditorLive do
   end
 
   def handle_info({:condition_built, "output_condition_" <> idx_str, expr}, socket) do
-    send_update(LoupeyWeb.BindingFormComponent, id: "binding_form", condition_update: {idx_str, expr})
+    send_update(LoupeyWeb.BindingFormComponent,
+      id: "binding_form",
+      condition_update: {idx_str, expr}
+    )
+
     {:noreply, socket}
   end
 
@@ -403,7 +423,10 @@ defmodule LoupeyWeb.ProfileEditorLive do
   end
 
   def handle_info({:hide_dropdown, _id}, socket), do: {:noreply, socket}
-  def handle_info({:update_yaml, yaml}, socket), do: {:noreply, assign(socket, binding_yaml: yaml, editor_mode: :yaml)}
+
+  def handle_info({:update_yaml, yaml}, socket),
+    do: {:noreply, assign(socket, binding_yaml: yaml, editor_mode: :yaml)}
+
   def handle_info(_msg, socket), do: {:noreply, socket}
 
   # -- Helpers --
@@ -431,7 +454,12 @@ defmodule LoupeyWeb.ProfileEditorLive do
     case result do
       {:ok, _} ->
         Loupey.Orchestrator.reload_active_profile()
-        {:ok, socket |> assign(binding_yaml: yaml) |> reload_profile() |> put_flash(:info, "Binding saved")}
+
+        {:ok,
+         socket
+         |> assign(binding_yaml: yaml)
+         |> reload_profile()
+         |> put_flash(:info, "Binding saved")}
 
       {:error, _} ->
         {:error, put_flash(socket, :error, "Failed to save binding")}
@@ -444,7 +472,8 @@ defmodule LoupeyWeb.ProfileEditorLive do
 
     active_layout =
       if socket.assigns.active_layout,
-        do: Enum.find(layouts, &(&1.id == socket.assigns.active_layout.id)) || List.first(layouts),
+        do:
+          Enum.find(layouts, &(&1.id == socket.assigns.active_layout.id)) || List.first(layouts),
         else: List.first(layouts)
 
     {editing_binding, binding_yaml} =
@@ -470,13 +499,9 @@ defmodule LoupeyWeb.ProfileEditorLive do
   end
 
   defp get_device_spec(device_type) do
-    case Loupey.Devices.discover() do
-      [{driver, _tty} | _] ->
-        spec = driver.device_spec()
-        if spec.type == device_type, do: spec, else: spec
-
-      [] ->
-        LoupedeckDriver.device_spec()
+    case Loupey.Devices.driver_for_type(device_type) do
+      nil -> nil
+      driver -> driver.device_spec()
     end
   end
 

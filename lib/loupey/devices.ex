@@ -9,6 +9,27 @@ defmodule Loupey.Devices do
   @drivers [Loupey.Driver.Loupedeck]
 
   @doc """
+  Return all registered driver modules.
+  """
+  @spec drivers() :: [module()]
+  def drivers, do: @drivers
+
+  @doc """
+  Return the driver module for a given device-type string (e.g. "Loupedeck Live").
+  Returns `nil` if no driver produces that type.
+  """
+  @spec driver_for_type(String.t()) :: module() | nil
+  def driver_for_type(device_type) do
+    Enum.find(@drivers, fn d -> d.device_spec().type == device_type end)
+  end
+
+  @doc """
+  Return a `Loupey.Device.Spec` for each registered driver.
+  """
+  @spec all_device_specs() :: [Loupey.Device.Spec.t()]
+  def all_device_specs, do: Enum.map(@drivers, & &1.device_spec())
+
+  @doc """
   Discover all supported devices currently connected.
 
   Returns a list of `{driver_module, tty}` tuples for each matched device.

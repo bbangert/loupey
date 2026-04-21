@@ -9,12 +9,10 @@ defmodule Loupey.Driver.Loupedeck do
   @behaviour Loupey.Driver
 
   alias Loupey.Device.{Spec, Variant}
+  alias Loupey.Driver.Loupedeck.Connection
   alias Loupey.Events.{PressEvent, RotateEvent, TouchEvent}
   alias Loupey.Graphics.Color
   alias Loupey.RenderCommands.{DrawBuffer, SetBrightness, SetLED}
-
-  @ws_upgrade_header "GET /index.html\nHTTP/1.1\nConnection: Upgrade\nUpgrade: websocket\nSec-WebSocket-Key: 123abc\n\n"
-  @ws_close_frame <<0x88, 0x80, 0x00, 0x00, 0x00, 0x00>>
 
   @commands %{
     button_press: 0x00,
@@ -77,11 +75,6 @@ defmodule Loupey.Driver.Loupedeck do
     defstruct [:variant, :spec, touches: %{}]
   end
 
-  defmodule ConnectionState do
-    @moduledoc false
-    defstruct [:uart_pid, :tty]
-  end
-
   # -- Driver behaviour --
 
   @impl true
@@ -93,97 +86,14 @@ defmodule Loupey.Driver.Loupedeck do
   end
 
   @impl true
-  def connect(tty, _opts \\ []) do
-    # Start UART unlinked so we control its lifecycle explicitly.
-    # If we link, a crash during init can orphan the UART holding the tty.
-    {:ok, uart_pid} = Circuits.UART.start_link()
-
-    try do
-      with :ok <- Circuits.UART.open(uart_pid, tty, speed: 256_000, active: false),
-           # Send the WebSocket close frame first in case the device is still in
-           # an active session from a prior unclean disconnect.
-           _ <- Circuits.UART.write(uart_pid, @ws_close_frame),
-           # Small delay to let the device process the close and reset.
-           _ <- Process.sleep(50),
-           # Drain any buffered data from the prior session.
-           _ <- drain_uart(uart_pid),
-           # Now start a fresh WebSocket handshake.
-           :ok <- Circuits.UART.write(uart_pid, @ws_upgrade_header),
-           {:ok, _upgrade_response} <- Circuits.UART.read(uart_pid, 2000),
-           # Drain any extra data sent right after upgrade.
-           _ <- drain_uart(uart_pid),
-           :ok <-
-             Circuits.UART.configure(uart_pid,
-               framing: {Loupey.Driver.Loupedeck.Framing, []},
-               active: true
-             ) do
-        {:ok, %ConnectionState{uart_pid: uart_pid, tty: tty}}
-      else
-        {:error, _} = error ->
-          force_cleanup(uart_pid)
-          error
-      end
-    rescue
-      e ->
-        force_cleanup(uart_pid)
-        {:error, e}
-    end
-  end
+  def open(tty, opts), do: Connection.start_link(tty, opts)
 
   @impl true
-  def disconnect(%ConnectionState{uart_pid: uart_pid}) do
-    # Best-effort close: send WS close frame, then tear down UART.
-    # Each step is wrapped to ensure we always reach stop/1.
-    try do
-      Circuits.UART.write(uart_pid, @ws_close_frame)
-    catch
-      _, _ -> :ok
-    end
-
-    try do
-      Circuits.UART.close(uart_pid)
-    catch
-      _, _ -> :ok
-    end
-
-    try do
-      Circuits.UART.stop(uart_pid)
-    catch
-      _, _ -> :ok
-    end
-
-    :ok
-  end
-
-  # Drain all buffered data from UART so we start clean.
-  defp drain_uart(uart_pid) do
-    case Circuits.UART.read(uart_pid, 100) do
-      {:ok, ""} -> :ok
-      {:ok, _data} -> drain_uart(uart_pid)
-      {:error, :etimedout} -> :ok
-      _ -> :ok
-    end
-  end
-
-  # Force cleanup of UART process regardless of state.
-  defp force_cleanup(uart_pid) do
-    try do
-      Circuits.UART.close(uart_pid)
-    catch
-      _, _ -> :ok
-    end
-
-    try do
-      Circuits.UART.stop(uart_pid)
-    catch
-      _, _ -> :ok
-    end
-  end
+  def close(pid), do: Connection.close(pid)
 
   @impl true
-  def send_raw(%ConnectionState{uart_pid: uart_pid}, data) do
-    Circuits.UART.write(uart_pid, data)
-  end
+  def send_command(pid, {_cmd_byte, _payload} = encoded),
+    do: Connection.send_command(pid, encoded)
 
   @impl true
   def parse(driver_state, <<_, command_byte, _transaction_id, data::binary>>) do
@@ -227,9 +137,7 @@ defmodule Loupey.Driver.Loupedeck do
     {@commands.set_brightness, byte}
   end
 
-  @doc """
-  Encode a refresh command for a display. Display ID comes from the control's display spec.
-  """
+  @impl true
   def encode_refresh(display_id_binary) do
     {@commands.draw, display_id_binary}
   end
