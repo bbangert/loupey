@@ -121,12 +121,12 @@ defmodule Loupey.Orchestrator do
   defp do_connect_all_devices do
     results = Devices.connect_all()
 
-    case Profiles.get_active_profile() do
-      nil ->
-        Logger.info("Orchestrator: devices connected, no active profile")
+    case Profiles.list_active_profiles() do
+      [] ->
+        Logger.info("Orchestrator: devices connected, no active profiles")
 
-      profile ->
-        activate_profile_on_devices(profile)
+      profiles ->
+        for profile <- profiles, do: activate_profile_on_devices(profile)
     end
 
     results
@@ -135,28 +135,46 @@ defmodule Loupey.Orchestrator do
   # -- Internal: Profile Lifecycle --
 
   defp do_activate_profile(profile_id) do
-    # Deactivate all profiles first
-    for p <- Profiles.list_profiles(), p.active do
-      do_deactivate_profile(p.id)
-    end
+    case Profiles.get_profile(profile_id) do
+      nil ->
+        {:error, :not_found}
 
-    profile = Profiles.get_profile(profile_id)
+      profile ->
+        # Atomic swap at the DB level — deactivate other profiles for the
+        # same device_type, activate the target, all in one transaction.
+        # Engines on the affected devices don't need an explicit stop:
+        # `start_or_update_engine/2` updates the existing engine in place
+        # if one is already running.
+        case Profiles.activate_exclusive(profile) do
+          {:ok, _} ->
+            # Re-fetch so layouts+bindings are preloaded for render wiring.
+            profile = Profiles.get_profile(profile_id)
+            activate_profile_on_devices(profile)
+            {:ok, profile}
 
-    if profile do
-      Profiles.update_profile(profile, %{"active" => true})
-      profile = Profiles.get_profile(profile_id)
-      activate_profile_on_devices(profile)
-      {:ok, profile}
-    else
-      {:error, :not_found}
+          {:error, reason} ->
+            Logger.error(
+              "Orchestrator: activate_exclusive failed for profile #{profile_id}: #{inspect(reason)}"
+            )
+
+            {:error, reason}
+        end
     end
+  rescue
+    exception ->
+      Logger.error(
+        "Orchestrator: unexpected crash activating profile #{profile_id}: " <>
+          Exception.format(:error, exception, __STACKTRACE__)
+      )
+
+      {:error, {:exception, Exception.message(exception)}}
   end
 
   defp do_deactivate_profile(profile_id) do
     profile = Profiles.get_profile(profile_id)
 
     if profile do
-      stop_all_engines()
+      stop_engines_for(profile.device_type)
       Profiles.update_profile(profile, %{"active" => false})
       :ok
     else
@@ -165,18 +183,19 @@ defmodule Loupey.Orchestrator do
   end
 
   defp do_reload_active_profile do
-    case Profiles.get_active_profile() do
-      nil -> :ok
-      profile -> activate_profile_on_devices(profile)
+    for profile <- Profiles.list_active_profiles() do
+      activate_profile_on_devices(profile)
     end
+
+    :ok
   end
 
   defp activate_profile_on_devices(profile) do
     core_profile = Profiles.to_core_profile(profile)
 
-    for {_driver, tty} <- Devices.discover() do
-      ensure_connected(tty)
-      maybe_start_engine(tty, core_profile, profile.device_type)
+    for {_driver, device_ref} <- Devices.discover() do
+      ensure_connected(device_ref)
+      maybe_start_engine(device_ref, core_profile, profile.device_type)
     end
   end
 
@@ -213,9 +232,15 @@ defmodule Loupey.Orchestrator do
     end
   end
 
-  defp stop_all_engines do
-    for {_driver, tty} <- Devices.discover() do
-      stop_engine(tty)
+  # Stop engines only for devices of the given device type — leaves engines
+  # for other device types running so a multi-device setup isn't torn down
+  # when deactivating a single profile.
+  defp stop_engines_for(device_type) do
+    for {_driver, device_ref} <- Devices.discover(),
+        spec = safe_get_spec(device_ref),
+        spec != nil,
+        spec.type == device_type do
+      stop_engine(device_ref)
     end
   end
 
@@ -244,8 +269,8 @@ defmodule Loupey.Orchestrator do
   end
 
   defp connect_by_id(device_id) do
-    case Enum.find(Devices.discover(), fn {_d, tty} -> tty == device_id end) do
-      {driver, tty} -> Devices.connect(driver, tty)
+    case Enum.find(Devices.discover(), fn {_d, device_ref} -> device_ref == device_id end) do
+      {driver, device_ref} -> Devices.connect(driver, device_ref)
       nil -> :ok
     end
   end
@@ -265,24 +290,21 @@ defmodule Loupey.Orchestrator do
   defp build_status do
     connected_devices =
       Devices.discover()
-      |> Enum.map(fn {driver, tty} ->
-        spec = safe_get_spec(tty)
+      |> Enum.map(fn {driver, device_ref} ->
+        spec = safe_get_spec(device_ref)
 
         %{
-          tty: tty,
-          device_id: tty,
+          device_id: device_ref,
           driver: driver,
           connected: spec != nil,
           device_type: spec && spec.type,
-          engine_running: engine_running?(tty)
+          engine_running: engine_running?(device_ref)
         }
       end)
 
-    active_profile = Profiles.get_active_profile()
-
     %{
       devices: connected_devices,
-      active_profile: active_profile && %{id: active_profile.id, name: active_profile.name}
+      active_profiles: Profiles.list_active_profile_summaries()
     }
   end
 

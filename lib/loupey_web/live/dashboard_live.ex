@@ -48,7 +48,7 @@ defmodule LoupeyWeb.DashboardLive do
               </span>
               <div>
                 <span class="text-sm">{device.device_type || "Unknown"}</span>
-                <span class="text-xs text-gray-500 ml-2">{device.tty}</span>
+                <span class="text-xs text-gray-500 ml-2">{device.device_id}</span>
               </div>
             </div>
             <span :if={device.engine_running} class="text-xs bg-blue-900 text-blue-300 px-2 py-0.5 rounded">
@@ -84,14 +84,17 @@ defmodule LoupeyWeb.DashboardLive do
           </div>
         </div>
 
-        <%!-- Active Profile --%>
+        <%!-- Active Profiles --%>
         <div class="bg-gray-800 rounded-lg p-6 border border-gray-700">
-          <h2 class="text-lg font-semibold mb-4">Active Profile</h2>
-          <div :if={@status.active_profile} class="text-sm">
-            <span class="text-white font-medium">{@status.active_profile.name}</span>
+          <h2 class="text-lg font-semibold mb-4">Active Profiles</h2>
+          <div :if={@status.active_profiles != []} class="space-y-2">
+            <div :for={p <- @status.active_profiles} class="flex items-baseline gap-2 text-sm">
+              <span class="text-white font-medium">{p.name}</span>
+              <span class="text-gray-400 text-xs">{p.device_type}</span>
+            </div>
           </div>
-          <div :if={!@status.active_profile} class="text-gray-400 text-sm">
-            No profile active.
+          <div :if={@status.active_profiles == []} class="text-gray-400 text-sm">
+            No profiles active.
             <a href="/profiles" class="text-blue-400 hover:text-blue-300 ml-1">
               Activate one &rarr;
             </a>

@@ -13,7 +13,7 @@ defmodule Loupey.DeviceServerTest do
     {:ok, device_pid} =
       DeviceServer.start_link(
         driver: Fake,
-        tty: self(),
+        device_ref: self(),
         device_id: id
       )
 

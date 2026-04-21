@@ -32,9 +32,12 @@ defmodule Loupey.DeviceServer do
 
   def start_link(opts) do
     driver_module = Keyword.fetch!(opts, :driver)
-    tty = Keyword.fetch!(opts, :tty)
-    device_id = Keyword.get(opts, :device_id, tty)
-    GenServer.start_link(__MODULE__, {driver_module, tty, device_id}, name: via_tuple(device_id))
+    device_ref = Keyword.fetch!(opts, :device_ref)
+    device_id = Keyword.get(opts, :device_id, device_ref)
+
+    GenServer.start_link(__MODULE__, {driver_module, device_ref, device_id},
+      name: via_tuple(device_id)
+    )
   end
 
   @doc """
@@ -69,8 +72,8 @@ defmodule Loupey.DeviceServer do
   # -- GenServer callbacks --
 
   @impl true
-  def init({driver_module, tty, device_id}) do
-    case driver_module.open(tty, parent: self()) do
+  def init({driver_module, device_ref, device_id}) do
+    case driver_module.open(device_ref, parent: self()) do
       {:ok, connection} ->
         spec = driver_module.device_spec()
 

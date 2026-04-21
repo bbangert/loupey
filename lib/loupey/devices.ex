@@ -4,9 +4,18 @@ defmodule Loupey.Devices do
 
   Provides functions to discover connected devices, start device servers
   under the dynamic supervisor, and subscribe to device events.
+
+  Supports two transports:
+
+  - `Circuits.UART` enumeration for Loupedeck (WebSocket-over-UART).
+  - `HID.enumerate/0` for Elgato Stream Deck and other HID devices.
+
+  Each registered driver provides `matches?/1` which is called with a map
+  containing `:vendor_id` and `:product_id` (plus other transport-specific
+  fields). The first driver that matches owns the device.
   """
 
-  @drivers [Loupey.Driver.Loupedeck]
+  @drivers [Loupey.Driver.Loupedeck, Loupey.Driver.Streamdeck]
 
   @doc """
   Return all registered driver modules.
@@ -30,19 +39,55 @@ defmodule Loupey.Devices do
   def all_device_specs, do: Enum.map(@drivers, & &1.device_spec())
 
   @doc """
-  Discover all supported devices currently connected.
+  Discover all supported devices currently connected across UART and HID
+  transports.
 
-  Returns a list of `{driver_module, tty}` tuples for each matched device.
+  Returns a list of `{driver_module, device_ref}` tuples. `device_ref` is
+  the transport-specific identifier passed to `driver.open/2` — a tty
+  path for UART devices, a hidraw path (e.g. `/dev/hidraw10`) for HID.
   """
-  @spec discover() :: [{module(), String.t()}]
+  @spec discover() :: [{module(), term()}]
   def discover do
+    uart_matches() ++ hid_matches()
+  end
+
+  defp uart_matches do
     Circuits.UART.enumerate()
-    |> Enum.flat_map(fn {tty, info} ->
-      case Enum.find(@drivers, & &1.matches?(info)) do
-        nil -> []
-        driver -> [{driver, tty}]
-      end
-    end)
+    |> Enum.flat_map(fn {device_ref, info} -> find_driver(info, device_ref) end)
+  end
+
+  defp hid_matches do
+    HID.enumerate()
+    |> Enum.flat_map(fn info -> find_driver(info, info.path) end)
+  rescue
+    e ->
+      log_hid_failure_once(e)
+      []
+  end
+
+  # `discover/0` is called on every dashboard status poll; logging a warning
+  # on each failed HID enumeration would spam the log and drown other output.
+  # Log the first failure at :warning, then go quiet until the VM restarts.
+  @hid_failure_flag {__MODULE__, :hid_enumerate_failed}
+
+  defp log_hid_failure_once(exception) do
+    unless :persistent_term.get(@hid_failure_flag, false) do
+      require Logger
+
+      Logger.warning(
+        "HID enumeration failed: #{Exception.message(exception)} — Stream Deck devices will not be discovered. " <>
+          "Check that libhidapi + libusb are installed (see README). This warning will be logged only once."
+      )
+
+      :persistent_term.put(@hid_failure_flag, true)
+    end
+  end
+
+  defp find_driver(info, device_ref) do
+    case Enum.find(@drivers, & &1.matches?(info)) do
+      nil -> []
+      driver -> [{driver, device_ref}]
+    end
   end
 
   @doc """
@@ -50,15 +95,15 @@ defmodule Loupey.Devices do
 
   Returns `{:ok, pid}` or `{:error, reason}`.
   """
-  @spec connect(module(), String.t(), keyword()) :: {:ok, pid()} | {:error, term()}
-  def connect(driver_module, tty, opts \\ []) do
-    device_id = Keyword.get(opts, :device_id, tty)
+  @spec connect(module(), term(), keyword()) :: {:ok, pid()} | {:error, term()}
+  def connect(driver_module, device_ref, opts \\ []) do
+    device_id = Keyword.get(opts, :device_id, device_ref)
 
     child_spec = %{
       id: {Loupey.DeviceServer, device_id},
       start:
         {Loupey.DeviceServer, :start_link,
-         [[driver: driver_module, tty: tty, device_id: device_id]]},
+         [[driver: driver_module, device_ref: device_ref, device_id: device_id]]},
       restart: :transient
     }
 
@@ -73,7 +118,7 @@ defmodule Loupey.Devices do
   @spec connect_all() :: [{:ok, pid()} | {:error, term()}]
   def connect_all do
     discover()
-    |> Enum.map(fn {driver, tty} -> connect(driver, tty) end)
+    |> Enum.map(fn {driver, device_ref} -> connect(driver, device_ref) end)
   end
 
   @doc """

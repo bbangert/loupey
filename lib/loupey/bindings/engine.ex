@@ -76,8 +76,9 @@ defmodule Loupey.Bindings.Engine do
     # Subscribe to device input events
     Loupey.Devices.subscribe(device_id)
 
-    # Load profile: use provided profile, or load from DB (for crash recovery)
-    profile = initial_profile || load_profile_from_db()
+    # Load profile: use provided profile, or load the active profile for
+    # this device's type from the DB (for crash recovery).
+    profile = initial_profile || load_profile_from_db(spec.type)
 
     {entity_states, profile} =
       if profile do
@@ -354,8 +355,12 @@ defmodule Loupey.Bindings.Engine do
 
   defp extract_refs_from_instructions(_), do: []
 
-  defp extract_refs_from_value(value) when is_binary(value), do: Expression.extract_entity_refs(value)
-  defp extract_refs_from_value(%{} = map), do: map |> Map.values() |> Enum.flat_map(&extract_refs_from_value/1)
+  defp extract_refs_from_value(value) when is_binary(value),
+    do: Expression.extract_entity_refs(value)
+
+  defp extract_refs_from_value(%{} = map),
+    do: map |> Map.values() |> Enum.flat_map(&extract_refs_from_value/1)
+
   defp extract_refs_from_value(_), do: []
 
   defp subscribe_and_fetch(entity_ids) do
@@ -366,8 +371,8 @@ defmodule Loupey.Bindings.Engine do
     end)
   end
 
-  defp load_profile_from_db do
-    case Loupey.Profiles.get_active_profile() do
+  defp load_profile_from_db(device_type) do
+    case Loupey.Profiles.get_active_profile_for(device_type) do
       nil -> nil
       db_profile -> Loupey.Profiles.to_core_profile(db_profile)
     end
