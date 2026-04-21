@@ -103,17 +103,33 @@ defmodule Loupey.DeviceServer do
   @impl true
   def handle_cast({:render, command}, state) do
     encoded = state.driver_module.encode(command)
-    _ = state.driver_module.send_command(state.connection, encoded)
-    {:noreply, state}
+    dispatch_send(state, encoded)
   end
 
   def handle_cast({:refresh, display_id}, state) do
     if function_exported?(state.driver_module, :encode_refresh, 1) do
       encoded = state.driver_module.encode_refresh(display_id)
-      _ = state.driver_module.send_command(state.connection, encoded)
+      dispatch_send(state, encoded)
+    else
+      {:noreply, state}
     end
+  end
 
-    {:noreply, state}
+  # Forward an encoded command to the driver's transport. On `{:error, reason}`
+  # stop abnormally so the DynamicSupervisor restarts us (and reopens the
+  # driver connection) rather than silently stranding the device.
+  defp dispatch_send(state, encoded) do
+    case state.driver_module.send_command(state.connection, encoded) do
+      :ok ->
+        {:noreply, state}
+
+      {:error, reason} ->
+        Logger.warning(
+          "Driver send_command failed on #{inspect(state.device_id)}: #{inspect(reason)}"
+        )
+
+        {:stop, {:send_failed, reason}, state}
+    end
   end
 
   @impl true

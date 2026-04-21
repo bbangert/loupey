@@ -6,7 +6,7 @@ defmodule Loupey.Driver.Fake do
 
   The `tty` passed to `DeviceServer.start_link/1` is the recorder pid — a
   pid (typically the test process) that will receive
-  `{:fake_driver, :open | :close | {:send_command, encoded}}` tuples.
+  `{:fake_driver, {:open, opts} | :close | {:send_command, encoded}}` tuples.
 
   Usage:
 

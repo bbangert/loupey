@@ -20,30 +20,37 @@ defmodule LoupeyWeb.ProfileEditorLive do
   def mount(%{"id" => id}, _session, socket) do
     profile = Profiles.get_profile(String.to_integer(id))
 
-    if profile do
-      spec = get_device_spec(profile.device_type)
-      layouts = profile.layouts |> Enum.sort_by(& &1.position)
-      active_layout = List.first(layouts)
+    case {profile, profile && get_device_spec(profile.device_type)} do
+      {nil, _} ->
+        {:ok,
+         socket
+         |> put_flash(:error, "Profile not found")
+         |> redirect(to: ~p"/profiles")}
 
-      {:ok,
-       assign(socket,
-         profile: profile,
-         spec: spec,
-         layouts: layouts,
-         active_layout: active_layout,
-         active_bindings: layout_bindings(active_layout),
-         selected_control: nil,
-         editing_binding: nil,
-         show_new_layout: false,
-         entity_search: "",
-         binding_yaml: "",
-         editor_mode: :visual
-       )}
-    else
-      {:ok,
-       socket
-       |> put_flash(:error, "Profile not found")
-       |> redirect(to: ~p"/profiles")}
+      {profile, nil} ->
+        {:ok,
+         socket
+         |> put_flash(:error, "No driver registered for device type \"#{profile.device_type}\"")
+         |> redirect(to: ~p"/profiles")}
+
+      {profile, spec} ->
+        layouts = profile.layouts |> Enum.sort_by(& &1.position)
+        active_layout = List.first(layouts)
+
+        {:ok,
+         assign(socket,
+           profile: profile,
+           spec: spec,
+           layouts: layouts,
+           active_layout: active_layout,
+           active_bindings: layout_bindings(active_layout),
+           selected_control: nil,
+           editing_binding: nil,
+           show_new_layout: false,
+           entity_search: "",
+           binding_yaml: "",
+           editor_mode: :visual
+         )}
     end
   end
 
