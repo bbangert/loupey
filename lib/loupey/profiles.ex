@@ -21,9 +21,12 @@ defmodule Loupey.Profiles do
   end
 
   @doc """
-  Return every profile with `active: true`, one per device type, with
-  layouts + bindings preloaded. The uniqueness-per-device-type invariant
-  is enforced by `Orchestrator` on activation (not at the database level).
+  Return every profile with `active: true`, with layouts + bindings
+  preloaded.
+
+  Under normal operation there should be at most one active profile per
+  device type — that invariant is enforced by `Orchestrator` on
+  activation, not by this query or at the database level.
   """
   def list_active_profiles do
     Profile
@@ -70,6 +73,38 @@ defmodule Loupey.Profiles do
     profile
     |> Profile.changeset(attrs)
     |> Repo.update()
+  end
+
+  @doc """
+  Atomically make `profile` the single active profile for its `device_type`.
+
+  In one `Repo.transaction/1`:
+
+  1. Sets `active: false` on every other row matching the same `device_type`
+     (bulk `update_all`, no changeset overhead).
+  2. Sets `active: true` on the target row.
+
+  Returns `{:ok, %Profile{}}` with the updated record (no layouts+bindings
+  preload — callers that need those should re-fetch via `get_profile/1`).
+
+  This is the only safe way to toggle the active flag: the
+  `Orchestrator`-enforced "one active profile per device type" invariant
+  isn't represented at the DB schema level, so concurrent non-transactional
+  writes could leave duplicates or briefly empty state.
+  """
+  def activate_exclusive(%Profile{} = profile) do
+    Repo.transaction(fn ->
+      Profile
+      |> where(
+        [p],
+        p.active == true and p.device_type == ^profile.device_type and p.id != ^profile.id
+      )
+      |> Repo.update_all(set: [active: false])
+
+      profile
+      |> Profile.changeset(%{"active" => true})
+      |> Repo.update!()
+    end)
   end
 
   def delete_profile(%Profile{} = profile), do: Repo.delete(profile)

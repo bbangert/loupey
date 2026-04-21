@@ -53,7 +53,7 @@ defmodule Loupey.Devices do
 
   defp uart_matches do
     Circuits.UART.enumerate()
-    |> Enum.flat_map(fn {tty, info} -> find_driver(info, tty) end)
+    |> Enum.flat_map(fn {device_ref, info} -> find_driver(info, device_ref) end)
   end
 
   defp hid_matches do
@@ -84,14 +84,14 @@ defmodule Loupey.Devices do
   Returns `{:ok, pid}` or `{:error, reason}`.
   """
   @spec connect(module(), String.t(), keyword()) :: {:ok, pid()} | {:error, term()}
-  def connect(driver_module, tty, opts \\ []) do
-    device_id = Keyword.get(opts, :device_id, tty)
+  def connect(driver_module, device_ref, opts \\ []) do
+    device_id = Keyword.get(opts, :device_id, device_ref)
 
     child_spec = %{
       id: {Loupey.DeviceServer, device_id},
       start:
         {Loupey.DeviceServer, :start_link,
-         [[driver: driver_module, tty: tty, device_id: device_id]]},
+         [[driver: driver_module, device_ref: device_ref, device_id: device_id]]},
       restart: :transient
     }
 
@@ -106,7 +106,7 @@ defmodule Loupey.Devices do
   @spec connect_all() :: [{:ok, pid()} | {:error, term()}]
   def connect_all do
     discover()
-    |> Enum.map(fn {driver, tty} -> connect(driver, tty) end)
+    |> Enum.map(fn {driver, device_ref} -> connect(driver, device_ref) end)
   end
 
   @doc """

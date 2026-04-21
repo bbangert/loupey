@@ -48,7 +48,7 @@ defmodule LoupeyWeb.DashboardLive do
               </span>
               <div>
                 <span class="text-sm">{device.device_type || "Unknown"}</span>
-                <span class="text-xs text-gray-500 ml-2">{device.tty}</span>
+                <span class="text-xs text-gray-500 ml-2">{device.device_id}</span>
               </div>
             </div>
             <span :if={device.engine_running} class="text-xs bg-blue-900 text-blue-300 px-2 py-0.5 rounded">

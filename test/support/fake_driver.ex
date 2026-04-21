@@ -4,8 +4,8 @@ defmodule Loupey.Driver.Fake do
   lets tests inject synthetic `{:device_data, bytes}` messages into a
   `Loupey.DeviceServer` without any real transport.
 
-  The `tty` passed to `DeviceServer.start_link/1` is the recorder pid — a
-  pid (typically the test process) that will receive
+  The `device_ref` passed to `DeviceServer.start_link/1` is the recorder pid
+  — a pid (typically the test process) that will receive
   `{:fake_driver, {:open, opts} | :close | {:send_command, encoded}}` tuples.
 
   Usage:
@@ -13,7 +13,7 @@ defmodule Loupey.Driver.Fake do
       {:ok, device_pid} =
         Loupey.DeviceServer.start_link(
           driver: Loupey.Driver.Fake,
-          tty: self(),
+          device_ref: self(),
           device_id: :fake1
         )
 
