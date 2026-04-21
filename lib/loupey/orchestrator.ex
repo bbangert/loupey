@@ -216,7 +216,7 @@ defmodule Loupey.Orchestrator do
       child_spec = %{
         id: {:engine, device_id},
         start: {Engine, :start_link, [[device_id: device_id, profile: core_profile]]},
-        restart: :permanent
+        restart: :transient
       }
 
       case DynamicSupervisor.start_child(Loupey.DeviceSupervisor, child_spec) do
