@@ -12,8 +12,8 @@ defmodule Loupey.Driver.Streamdeck.HidTransport do
   `lawik/hid` exposes only the blocking form of `hid_read_timeout` (the NIF
   hardcodes `-1` and offers no non-blocking variant). A poll loop with a
   short timeout isn't possible, so we spawn a linked reader that lives in
-  the blocking read. The read runs on a dirty scheduler (`ERL_NIF_DIRTY_`
-  `JOB_IO_BOUND`), so it doesn't starve the VM.
+  the blocking read. The read runs on a dirty scheduler
+  (`ERL_NIF_DIRTY_JOB_IO_BOUND`), so it doesn't starve the VM.
 
   On shutdown, `terminate/2` calls `HidPort.close/1`; the hidraw backend
   surfaces the closed fd as an error from the pending `hid_read_timeout`,
@@ -29,6 +29,11 @@ defmodule Loupey.Driver.Streamdeck.HidTransport do
   # MK.2 input reports are 19 bytes (4 header + 15 key states). Override
   # via the `:input_report_size` option for other devices.
   @default_input_report_size 19
+
+  # Bounded write timeout — matches Loupey.Driver.Loupedeck.Connection. A
+  # stuck write shouldn't block DeviceServer forever; 5 s surfaces as an
+  # abnormal stop that the supervisor restarts cleanly.
+  @send_timeout_ms 5_000
 
   defmodule State do
     @moduledoc false
@@ -56,13 +61,13 @@ defmodule Loupey.Driver.Streamdeck.HidTransport do
   @doc "Write an Output report (most packets — key images, reset, etc.)."
   @spec write_output(pid(), binary()) :: :ok | {:error, term()}
   def write_output(pid, data) when is_binary(data) do
-    GenServer.call(pid, {:write_output, data}, 5_000)
+    GenServer.call(pid, {:write_output, data}, @send_timeout_ms)
   end
 
   @doc "Write a Feature report (brightness, firmware queries, etc.)."
   @spec write_feature(pid(), binary()) :: :ok | {:error, term()}
   def write_feature(pid, data) when is_binary(data) do
-    GenServer.call(pid, {:write_feature, data}, 5_000)
+    GenServer.call(pid, {:write_feature, data}, @send_timeout_ms)
   end
 
   # -- GenServer callbacks --

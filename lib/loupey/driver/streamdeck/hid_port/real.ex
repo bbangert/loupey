@@ -2,8 +2,8 @@ defmodule Loupey.Driver.Streamdeck.HidPort.Real do
   @moduledoc """
   Production `HidPort` backed by the `lawik/hid` NIF.
 
-  Filters `HID.enumerate/0` results in Elixir because the upstream NIF's
-  VID/PID args are ignored (see scratchpad).
+  A thin delegate; filtering by VID/PID happens at the call site (the
+  StreamDeck driver's discovery layer) rather than here.
   """
 
   @behaviour Loupey.Driver.Streamdeck.HidPort
