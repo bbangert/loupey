@@ -121,7 +121,7 @@ defmodule Loupey.Driver.Loupedeck.Connection do
       with :ok <- Circuits.UART.open(uart_pid, tty, speed: 256_000, active: false),
            # Send a WebSocket close frame first in case the device is still in
            # an active session from a prior unclean disconnect.
-           _ <- Circuits.UART.write(uart_pid, @ws_close_frame),
+           :ok <- Circuits.UART.write(uart_pid, @ws_close_frame),
            # Small delay to let the device process the close and reset.
            _ <- Process.sleep(50),
            _ <- drain_uart(uart_pid),
