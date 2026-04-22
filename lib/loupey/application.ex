@@ -19,7 +19,14 @@ defmodule Loupey.Application do
       LoupeyWeb.Endpoint
     ]
 
-    Supervisor.start_link(children, strategy: :one_for_one, name: Loupey.Supervisor)
+    # `:rest_for_one` — when a child crashes, everything after it in the
+    # list restarts too. Matches the actual dependency graph: e.g. if
+    # `DeviceSupervisor` dies, Orchestrator's internal state about which
+    # engines are running goes stale, so restarting it keeps the
+    # supervision tree coherent. The `DynamicSupervisor` child specs are
+    # declared with `:transient` restart (see engine-transient-restart
+    # plan) so individual engines still stop cleanly on deactivate.
+    Supervisor.start_link(children, strategy: :rest_for_one, name: Loupey.Supervisor)
   end
 
   @impl true
