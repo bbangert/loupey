@@ -1,8 +1,8 @@
 defmodule Loupey.Bindings.ExpressionTest do
   use ExUnit.Case, async: true
 
-  alias Loupey.Bindings.Expression
   alias Hassock.EntityState
+  alias Loupey.Bindings.Expression
 
   defp light_on do
     %EntityState{

@@ -99,6 +99,9 @@ defmodule Loupey.HA do
   """
   defdelegate subscribe(entity_id), to: Events
 
+  @doc "Unsubscribe from state changes for a specific entity."
+  defdelegate unsubscribe(entity_id), to: Events
+
   @doc "Subscribe to all entity state changes."
   defdelegate subscribe_all(), to: Events
 

@@ -29,6 +29,11 @@ defmodule Loupey.HA.Events do
     Phoenix.PubSub.subscribe(pubsub, "ha:state:#{entity_id}")
   end
 
+  @doc "Unsubscribe from state changes for a specific entity."
+  def unsubscribe(entity_id, pubsub \\ @default_pubsub) do
+    Phoenix.PubSub.unsubscribe(pubsub, "ha:state:#{entity_id}")
+  end
+
   @doc "Subscribe to all state changes."
   def subscribe_all(pubsub \\ @default_pubsub) do
     Phoenix.PubSub.subscribe(pubsub, "ha:state:all")

@@ -20,6 +20,6 @@ defmodule Loupey.Schemas.Layout do
   def changeset(layout, attrs) do
     layout
     |> cast(attrs, [:name, :position, :profile_id])
-    |> validate_required([:name, :profile_id])
+    |> validate_required([:name, :position, :profile_id])
   end
 end

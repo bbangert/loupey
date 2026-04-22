@@ -332,7 +332,8 @@ defmodule LoupeyWeb.ProfileEditorLive do
   end
 
   def handle_event("save_binding", %{"yaml" => yaml}, socket) do
-    {:noreply, elem(do_save_binding(yaml, socket), 1)}
+    {_result, socket} = do_save_binding(yaml, socket)
+    {:noreply, socket}
   end
 
   def handle_event("set_editor_mode", %{"mode" => mode}, socket) when mode in ~w(visual yaml) do

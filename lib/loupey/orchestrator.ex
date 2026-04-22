@@ -18,6 +18,7 @@ defmodule Loupey.Orchestrator do
   alias Loupey.Devices
   alias Loupey.DeviceServer
   alias Loupey.Profiles
+  alias Loupey.Repo
 
   defmodule State do
     @moduledoc false
@@ -65,7 +66,7 @@ defmodule Loupey.Orchestrator do
   Get the status of all connected devices and their engines.
   """
   def status do
-    GenServer.call(__MODULE__, :status)
+    GenServer.call(__MODULE__, :status, 5_000)
   end
 
   # -- GenServer callbacks --
@@ -75,8 +76,11 @@ defmodule Loupey.Orchestrator do
     # Subscribe to HA connection events
     Phoenix.PubSub.subscribe(Loupey.PubSub, "ha:connected")
 
-    # Auto-connect HA from saved config
-    auto_connect_ha()
+    # Defer HA auto-connect off the init path so supervisor startup stays
+    # non-blocking (`HA.connect/1` can hang on a slow network / unreachable
+    # host). By the time this message is handled, init has returned and
+    # subsequent children in the supervision tree have already started.
+    send(self(), :auto_connect_ha)
 
     {:ok, %State{}}
   end
@@ -108,6 +112,11 @@ defmodule Loupey.Orchestrator do
   end
 
   @impl true
+  def handle_info(:auto_connect_ha, state) do
+    auto_connect_ha()
+    {:noreply, state}
+  end
+
   def handle_info(:ha_connected, state) do
     Logger.info("Orchestrator: HA connected, connecting devices")
     do_connect_all_devices()
@@ -119,7 +128,13 @@ defmodule Loupey.Orchestrator do
   # -- Internal: Device Connection --
 
   defp do_connect_all_devices do
-    results = Devices.connect_all()
+    # Refresh the cached device list — this is the single path that actually
+    # hits hidraw/UART enumeration. Every other caller (`activate_profile`,
+    # `status`, `stop_engines_for`, …) reads from the cache so a busy UI
+    # doesn't re-enumerate on every call. Pass the cached list through to
+    # `Devices.connect_all/1` so we don't re-scan inside it.
+    devices = refresh_discovered()
+    results = Devices.connect_all(devices)
 
     case Profiles.list_active_profiles() do
       [] ->
@@ -146,9 +161,11 @@ defmodule Loupey.Orchestrator do
         # `start_or_update_engine/2` updates the existing engine in place
         # if one is already running.
         case Profiles.activate_exclusive(profile) do
-          {:ok, _} ->
-            # Re-fetch so layouts+bindings are preloaded for render wiring.
-            profile = Profiles.get_profile(profile_id)
+          {:ok, updated} ->
+            # Preload layouts+bindings onto the already-loaded struct rather
+            # than issuing a second `get_profile/1` fetch. `Repo.preload/2`
+            # is a no-op for associations already loaded on the input.
+            profile = Repo.preload(updated, layouts: [bindings: []])
             activate_profile_on_devices(profile)
             {:ok, profile}
 
@@ -160,25 +177,25 @@ defmodule Loupey.Orchestrator do
             {:error, reason}
         end
     end
-  rescue
-    exception ->
-      Logger.error(
-        "Orchestrator: unexpected crash activating profile #{profile_id}: " <>
-          Exception.format(:error, exception, __STACKTRACE__)
-      )
-
-      {:error, {:exception, Exception.message(exception)}}
   end
 
   defp do_deactivate_profile(profile_id) do
-    profile = Profiles.get_profile(profile_id)
+    case Profiles.get_profile(profile_id) do
+      nil ->
+        {:error, :not_found}
 
-    if profile do
-      stop_engines_for(profile.device_type)
-      Profiles.update_profile(profile, %{"active" => false})
-      :ok
-    else
-      {:error, :not_found}
+      profile ->
+        # Update DB first, stop engines only on success. The previous order
+        # could leave the DB marked `active: true` while engines were
+        # already torn down if the update failed — worse than the inverse.
+        case Profiles.deactivate(profile) do
+          {:ok, _} ->
+            stop_engines_for(profile.device_type)
+            :ok
+
+          {:error, _} = err ->
+            err
+        end
     end
   end
 
@@ -193,7 +210,7 @@ defmodule Loupey.Orchestrator do
   defp activate_profile_on_devices(profile) do
     core_profile = Profiles.to_core_profile(profile)
 
-    for {_driver, device_ref} <- Devices.discover() do
+    for {_driver, device_ref} <- discovered_devices() do
       ensure_connected(device_ref)
       maybe_start_engine(device_ref, core_profile, profile.device_type)
     end
@@ -236,7 +253,7 @@ defmodule Loupey.Orchestrator do
   # for other device types running so a multi-device setup isn't torn down
   # when deactivating a single profile.
   defp stop_engines_for(device_type) do
-    for {_driver, device_ref} <- Devices.discover(),
+    for {_driver, device_ref} <- discovered_devices(),
         spec = safe_get_spec(device_ref),
         spec != nil,
         spec.type == device_type do
@@ -269,7 +286,7 @@ defmodule Loupey.Orchestrator do
   end
 
   defp connect_by_id(device_id) do
-    case Enum.find(Devices.discover(), fn {_d, device_ref} -> device_ref == device_id end) do
+    case Enum.find(discovered_devices(), fn {_d, device_ref} -> device_ref == device_id end) do
       {driver, device_ref} -> Devices.connect(driver, device_ref)
       nil -> :ok
     end
@@ -289,7 +306,7 @@ defmodule Loupey.Orchestrator do
 
   defp build_status do
     connected_devices =
-      Devices.discover()
+      discovered_devices()
       |> Enum.map(fn {driver, device_ref} ->
         spec = safe_get_spec(device_ref)
 
@@ -308,6 +325,23 @@ defmodule Loupey.Orchestrator do
     }
   end
 
+  # Process-dict cache for `Devices.discover/0` — scoped to the Orchestrator
+  # GenServer process, so no multi-process concerns. Refreshed only by
+  # `refresh_discovered/0` (from `do_connect_all_devices/0`), so a busy
+  # LiveView status poll doesn't re-enumerate hidraw/UART on every call.
+  defp discovered_devices do
+    case Process.get(:orchestrator_discovered_devices) do
+      nil -> refresh_discovered()
+      devices -> devices
+    end
+  end
+
+  defp refresh_discovered do
+    devices = Devices.discover()
+    Process.put(:orchestrator_discovered_devices, devices)
+    devices
+  end
+
   defp auto_connect_ha do
     case Loupey.Settings.get_active_ha_config() do
       %{url: url, token: token} ->
@@ -317,6 +351,10 @@ defmodule Loupey.Orchestrator do
         :ok
     end
   rescue
-    _ -> :ok
+    err ->
+      # Stay non-fatal so boot doesn't die on HA unreachable, but surface the
+      # reason — silent swallows made this hard to debug in practice.
+      Logger.warning("Orchestrator.auto_connect_ha: #{inspect(err)}")
+      :ok
   end
 end

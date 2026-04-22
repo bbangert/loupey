@@ -5,9 +5,9 @@ defmodule Loupey.Bindings.Rules do
   All functions are side-effect free — they take data in and return data out.
   """
 
+  alias Hassock.EntityState
   alias Loupey.Bindings.{Binding, Expression}
   alias Loupey.Events.{PressEvent, RotateEvent, TouchEvent}
-  alias Hassock.EntityState
 
   # -- Input rule matching --
 

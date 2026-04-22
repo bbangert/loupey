@@ -62,7 +62,7 @@ defmodule Loupey.DeviceServer do
   """
   @spec get_spec(term()) :: Loupey.Device.Spec.t()
   def get_spec(device_id) do
-    GenServer.call(via_tuple(device_id), :get_spec)
+    GenServer.call(via_tuple(device_id), :get_spec, 5_000)
   end
 
   defp via_tuple(device_id) do
@@ -157,7 +157,10 @@ defmodule Loupey.DeviceServer do
     try do
       state.driver_module.close(state.connection)
     catch
-      _, _ -> :ok
+      kind, err ->
+        Logger.debug("DeviceServer.terminate close/1 raised (ignored): #{kind} #{inspect(err)}")
+
+        :ok
     end
 
     :ok

@@ -29,6 +29,12 @@ defmodule Loupey.Profiles do
   transaction, and a partial unique index
   (`profiles_one_active_per_device_type`) on
   `(device_type) WHERE active = 1` guards against any bypass path.
+
+  > #### Performance note {: .warning}
+  > This preloads layouts + bindings, which fans out into N+1-ish
+  > queries on profiles with many bindings. Use
+  > `list_active_profile_summaries/0` instead for status displays and
+  > any other caller that only needs identity + device type.
   """
   def list_active_profiles do
     Profile
@@ -78,6 +84,18 @@ defmodule Loupey.Profiles do
   end
 
   @doc """
+  Flip a profile to `active: false`. Separate from `update_profile/2` so the
+  Orchestrator can order DB update before engine teardown — stopping engines
+  first and then failing the DB update leaves the system in a worse state
+  (marked active but not running) than the inverse.
+  """
+  def deactivate(%Profile{} = profile) do
+    profile
+    |> Profile.changeset(%{"active" => false})
+    |> Repo.update()
+  end
+
+  @doc """
   Atomically make `profile` the single active profile for its `device_type`.
 
   In one `Repo.transaction/1`:
@@ -96,6 +114,18 @@ defmodule Loupey.Profiles do
   profile per device type" invariant is enforced at the DB level by that
   partial unique index and at the application level by the `Orchestrator`
   GenServer serializing activations.
+
+  Correctness notes for future maintainers:
+
+  - The bulk `update_all` + changeset `update` pair is NOT atomic at the
+    row level, only at the transaction level. SQLite's default journal
+    mode (WAL) combined with `Repo.transaction/1` is what makes this
+    safe in the single-writer case.
+  - If this function is ever called from outside `Orchestrator` (which
+    serializes via GenServer), the caller must hold a lock, otherwise
+    two concurrent activations of different profiles for the same
+    `device_type` can race: both pass the `where [p, p.active == true
+    and p.id != ^profile.id]` filter and both claim the slot.
   """
   def activate_exclusive(%Profile{} = profile) do
     Repo.transaction(fn ->
@@ -162,9 +192,20 @@ defmodule Loupey.Profiles do
     %Loupey.Bindings.Profile{
       name: profile.name,
       device_type: profile.device_type,
-      active_layout: profile.active_layout || Map.keys(layouts) |> List.first(),
+      active_layout: profile.active_layout || default_active_layout(profile.layouts),
       layouts: layouts
     }
+  end
+
+  # Default to the lowest-position layout name. Previous implementation used
+  # `Map.keys(layouts) |> List.first()`, which depended on Elixir's map
+  # iteration order — undocumented and not stable across changes to the
+  # layout set. Sorting by `:position` (the same field the editor UI
+  # orders layouts by) makes the choice deterministic.
+  defp default_active_layout([]), do: nil
+
+  defp default_active_layout(layouts) do
+    layouts |> Enum.min_by(& &1.position) |> Map.get(:name)
   end
 
   defp convert_layout(layout) do

@@ -276,7 +276,7 @@ defmodule Loupey.Bindings.Expression.Evaluator do
   defp normalize(other), do: disallowed({:ast_shape, other})
 
   defp format_module_path(path) when is_list(path) do
-    path |> Enum.map(&Atom.to_string/1) |> Enum.join(".")
+    Enum.map_join(path, ".", &Atom.to_string/1)
   end
 
   defp normalize_binary_op(op, [left, right]) do

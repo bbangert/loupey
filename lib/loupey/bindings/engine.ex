@@ -13,12 +13,12 @@ defmodule Loupey.Bindings.Engine do
   use GenServer
   require Logger
 
+  alias Hassock.ServiceCall
   alias Loupey.Bindings.{Expression, LayoutEngine, Profile, Rules}
   alias Loupey.Bindings.Expression.Evaluator
   alias Loupey.Device.{Control, Spec}
   alias Loupey.DeviceServer
   alias Loupey.Events.TouchEvent
-  alias Hassock.ServiceCall
   alias Loupey.HA
 
   @touch_move_debounce_ms 400
@@ -74,32 +74,38 @@ defmodule Loupey.Bindings.Engine do
   def init({device_id, initial_profile}) do
     spec = DeviceServer.get_spec(device_id)
 
-    # Subscribe to device input events
+    # Subscribe to device input events — cheap, non-blocking PubSub.
     Loupey.Devices.subscribe(device_id)
 
-    # Load profile: use provided profile, or load the active profile for
-    # this device's type from the DB (for crash recovery).
-    profile = initial_profile || load_profile_from_db(spec.type)
-
-    {entity_states, profile} =
-      if profile do
-        entity_ids = collect_entity_ids(profile)
-        {subscribe_and_fetch(entity_ids), profile}
-      else
-        {%{}, nil}
-      end
+    # Defer the expensive work (profile load from DB, HA-cache fetch for
+    # every entity_id, initial render) to a self-send so init returns
+    # immediately. Keeps supervisor startup non-blocking and lets
+    # `DynamicSupervisor.start_child/2` return before HA subscriptions
+    # settle.
+    send(self(), {:init_state, initial_profile})
 
     state = %State{
       device_id: device_id,
       spec: spec,
-      profile: profile,
-      entity_states: entity_states
+      profile: nil,
+      entity_states: %{}
     }
 
-    # Initial render of active layout (if we have a profile)
-    if profile, do: send(self(), :render_active_layout)
-
     {:ok, state}
+  end
+
+  @impl true
+  def handle_info({:init_state, initial_profile}, state) do
+    case initial_profile || load_profile_from_db(state.spec.type) do
+      nil ->
+        {:noreply, state}
+
+      profile ->
+        entity_states = subscribe_and_fetch(collect_entity_ids(profile))
+        state = %{state | profile: profile, entity_states: entity_states}
+        send(self(), :render_active_layout)
+        {:noreply, state}
+    end
   end
 
   @impl true
@@ -134,9 +140,23 @@ defmodule Loupey.Bindings.Engine do
     # doesn't accumulate stale entries across repeated edits.
     Evaluator.clear_cache()
 
-    entity_ids = collect_entity_ids(profile)
-    new_entity_states = subscribe_and_fetch(entity_ids)
-    entity_states = Map.merge(state.entity_states, new_entity_states)
+    # Diff old vs new entity ids: subscribe to added, unsubscribe from
+    # removed, keep state for overlapping. Previously this unconditionally
+    # merged a fresh subscribe_and_fetch onto the existing map — leaking
+    # subscriptions (and keeping stale entity_states) for every entity
+    # the user removed from a binding.
+    old_ids = MapSet.new(Map.keys(state.entity_states))
+    new_ids = MapSet.new(collect_entity_ids(profile))
+
+    to_unsubscribe = MapSet.difference(old_ids, new_ids)
+    to_subscribe = MapSet.difference(new_ids, old_ids)
+    kept = MapSet.intersection(old_ids, new_ids)
+
+    for entity_id <- to_unsubscribe, do: HA.unsubscribe(entity_id)
+
+    added_states = subscribe_and_fetch(MapSet.to_list(to_subscribe))
+    kept_states = Map.take(state.entity_states, MapSet.to_list(kept))
+    entity_states = Map.merge(kept_states, added_states)
 
     state = %{state | profile: profile, entity_states: entity_states}
 
@@ -285,20 +305,17 @@ defmodule Loupey.Bindings.Engine do
 
   defp event_control_id(%{control_id: id}), do: id
 
-  defp execute_service_call(params) do
-    domain = Map.get(params, :domain) || Map.get(params, "domain")
-    service = Map.get(params, :service) || Map.get(params, "service")
-    target = Map.get(params, :target) || Map.get(params, "target")
-
-    if domain && service do
-      HA.call_service(%ServiceCall{
-        domain: domain,
-        service: service,
-        target: format_target(target),
-        service_data: Map.get(params, :service_data, %{})
-      })
-    end
+  defp execute_service_call(%{domain: domain, service: service} = params)
+       when is_binary(domain) and is_binary(service) do
+    HA.call_service(%ServiceCall{
+      domain: domain,
+      service: service,
+      target: format_target(Map.get(params, :target)),
+      service_data: Map.get(params, :service_data, %{})
+    })
   end
+
+  defp execute_service_call(_params), do: :ok
 
   defp format_target(target) when is_binary(target), do: %{entity_id: target}
   defp format_target(target) when is_map(target), do: target

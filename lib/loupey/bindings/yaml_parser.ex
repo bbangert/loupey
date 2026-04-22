@@ -208,7 +208,10 @@ defmodule Loupey.Bindings.YamlParser do
   defp parse_trigger("touch_move"), do: :touch_move
   defp parse_trigger("touch_end"), do: :touch_end
   defp parse_trigger(other) when is_atom(other), do: other
-  defp parse_trigger(other), do: safe_atom(other)
+  # Unknown trigger strings stay as strings — no downstream rule declares
+  # a trigger we don't list above, so the value won't match `Rules.matches?/2`
+  # regardless of shape, and the binding is gracefully ignored.
+  defp parse_trigger(other), do: other
 
   defp parse_condition(true), do: true
   defp parse_condition("true"), do: true
@@ -227,44 +230,90 @@ defmodule Loupey.Bindings.YamlParser do
     end)
   end
 
+  # Compile-time whitelist of YAML strings that get converted to atoms. Both
+  # map keys (in `atomize_keys/1`) and map values (in `atomize_value/1`)
+  # look up here. Anything not in the map stays as a string.
+  #
+  # The atoms on the right-hand side are embedded as literal values in the
+  # compiled function bodies below, which forces them into YamlParser's own
+  # beam atom table. Without this anchor, atoms like `:icon` / `:to_top` /
+  # `:entity_id` live only in the compile-time atom table (via e.g.
+  # `~w()a` in an unused module attribute) and may not be interned at
+  # runtime until some other module that references them literally happens
+  # to load. In tests that's never an issue (ExUnit eagerly loads every
+  # app module), but dev-server lazy module loading surfaced it as
+  # `ArgumentError: not an already existing atom` in `String.to_existing_atom/1`
+  # and then, after the value-atom fix, as silent string-keyed binding
+  # trees that never matched `%{icon: …}` pattern heads downstream.
+  #
+  # The list itself is not an atom-exhaustion boundary — that contract
+  # is moot for Loupey's single-user local-control threat model. It's
+  # just "which YAML identifiers do we atomize vs. leave as strings".
+  # `service_data`'s inner payload (brightness, rgb_color, transition,
+  # entity-specific arbitrary keys) is deliberately NOT in the map: those
+  # forward verbatim to `Hassock.ServiceCall` which accepts either form.
+  @atom_map %{
+    # Binding tree structure
+    "entity_id" => :entity_id,
+    "input_rules" => :input_rules,
+    "output_rules" => :output_rules,
+    "on" => :on,
+    "when" => :when,
+    "action" => :action,
+    "actions" => :actions,
+    "instructions" => :instructions,
+
+    # Action payload
+    "domain" => :domain,
+    "service" => :service,
+    "target" => :target,
+    "service_data" => :service_data,
+    "layout" => :layout,
+
+    # Output-rule instructions (top level)
+    "icon" => :icon,
+    "color" => :color,
+    "text" => :text,
+    "background" => :background,
+    "fill" => :fill,
+
+    # Text sub-map
+    "content" => :content,
+    "font_size" => :font_size,
+    "align" => :align,
+    "valign" => :valign,
+    "orientation" => :orientation,
+
+    # Fill sub-map
+    "amount" => :amount,
+    "direction" => :direction,
+
+    # Enumerated value atoms (text align/valign, fill direction, gradient type)
+    "top" => :top,
+    "middle" => :middle,
+    "bottom" => :bottom,
+    "left" => :left,
+    "center" => :center,
+    "right" => :right,
+    "horizontal" => :horizontal,
+    "vertical" => :vertical,
+    "to_top" => :to_top,
+    "to_bottom" => :to_bottom,
+    "to_left" => :to_left,
+    "to_right" => :to_right,
+    "linear" => :linear,
+    "radial" => :radial
+  }
+
   defp atomize_keys(map) when is_map(map) do
     Map.new(map, fn
-      {key, value} when is_binary(key) -> {safe_atom(key), atomize_value(value)}
+      {key, value} when is_binary(key) -> {Map.get(@atom_map, key, key), atomize_value(value)}
       {key, value} -> {key, atomize_value(value)}
     end)
   end
 
-  # Coerce a YAML-sourced string to an atom only if that atom already exists
-  # in the system. Unknown strings stay as strings — downstream pattern-matches
-  # on atom keys/triggers simply won't match, and the key is effectively
-  # ignored. Prevents an author-controlled YAML file from populating the atom
-  # table with unbounded entries (the atom table is not garbage-collected).
-  defp safe_atom(str) do
-    String.to_existing_atom(str)
-  rescue
-    ArgumentError -> str
-  end
-
-  # `~w()a` pre-creates the atoms at compile time so `to_existing_atom/1`
-  # in the whitelist branch below is guaranteed to succeed without touching
-  # the atom table at runtime. `@known_atom_strings` is the string form used
-  # in the guard — a cheap binary-membership check avoids the raise+rescue
-  # overhead of calling `safe_atom/1` on every binary YAML value (colors,
-  # entity_ids, icon paths, etc.) where the whitelist-miss case is the norm.
-  @known_atoms ~w(
-    top middle bottom left center right
-    horizontal vertical
-    to_top to_bottom to_left to_right
-    linear radial
-  )a
-  @known_atom_strings Enum.map(@known_atoms, &Atom.to_string/1)
-
   defp atomize_value(%{} = map), do: atomize_keys(map)
-
-  defp atomize_value(value) when is_binary(value) and value in @known_atom_strings do
-    String.to_existing_atom(value)
-  end
-
+  defp atomize_value(value) when is_binary(value), do: Map.get(@atom_map, value, value)
   defp atomize_value(value), do: value
 
   defp resolve_inputs(map, input_values) when is_map(map) do
@@ -275,7 +324,11 @@ defmodule Loupey.Bindings.YamlParser do
 
   defp resolve_input_value(value, input_values) when is_binary(value) do
     Regex.replace(~r/\{\{\s*inputs\.(\w+)\s*\}\}/, value, fn _match, key ->
-      to_string(Map.get(input_values, key) || Map.get(input_values, safe_atom(key), ""))
+      # Blueprint input names are user-authored and unbounded. Keep the
+      # lookup string-keyed; callers are expected to pass string keys
+      # (Phoenix form params naturally are). If a caller passes an atom-
+      # keyed map, the template substitution falls back to "".
+      to_string(Map.get(input_values, key, ""))
     end)
   end
 

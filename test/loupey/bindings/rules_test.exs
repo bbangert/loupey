@@ -1,9 +1,9 @@
 defmodule Loupey.Bindings.RulesTest do
   use ExUnit.Case, async: true
 
+  alias Hassock.EntityState
   alias Loupey.Bindings.{Binding, InputRule, OutputRule, Rules}
   alias Loupey.Events.{PressEvent, RotateEvent}
-  alias Hassock.EntityState
 
   defp light_on do
     %EntityState{entity_id: "light.lr", state: "on", attributes: %{"brightness" => 200}}
