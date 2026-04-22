@@ -26,11 +26,19 @@ defmodule Loupey.Settings do
     |> Repo.update()
   end
 
+  @doc """
+  Upsert an HA config by name. If no `name` is supplied, the schema default
+  (`"default"`) is used. Replaces the previous two-query "fetch active,
+  then update-or-insert" dance with a single round-trip via SQLite's
+  `ON CONFLICT` clause.
+  """
   def save_ha_config(attrs) do
-    case get_active_ha_config() do
-      nil -> create_ha_config(Map.put(attrs, "active", true))
-      config -> update_ha_config(config, attrs)
-    end
+    %HAConfig{}
+    |> HAConfig.changeset(Map.put_new(attrs, "active", true))
+    |> Repo.insert(
+      on_conflict: {:replace, [:url, :token, :active, :updated_at]},
+      conflict_target: [:name]
+    )
   end
 
   def delete_ha_config(%HAConfig{} = config), do: Repo.delete(config)

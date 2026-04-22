@@ -18,6 +18,7 @@ defmodule Loupey.Schemas.HAConfig do
     config
     |> cast(attrs, [:url, :token, :name, :active])
     |> validate_required([:url, :token])
+    |> unique_constraint(:name)
   end
 
   @doc """

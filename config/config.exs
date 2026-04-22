@@ -8,7 +8,12 @@ config :loupey, Loupey.Repo,
   pool_size: 5,
   journal_mode: :wal,
   cache_size: -64000,
-  temp_store: :memory
+  temp_store: :memory,
+  # Microsecond-precision timestamps on future migrations — matches what the
+  # existing rows already carry (SQLite stores timestamps as TEXT at whatever
+  # precision Ecto writes). Previously omitted → new migrations would get
+  # second-precision by default, which is visibly inconsistent.
+  migration_timestamps: [type: :utc_datetime_usec]
 
 config :loupey, LoupeyWeb.Endpoint,
   url: [host: "localhost"],

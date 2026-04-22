@@ -18,6 +18,7 @@ defmodule Loupey.Orchestrator do
   alias Loupey.Devices
   alias Loupey.DeviceServer
   alias Loupey.Profiles
+  alias Loupey.Repo
 
   defmodule State do
     @moduledoc false
@@ -146,9 +147,11 @@ defmodule Loupey.Orchestrator do
         # `start_or_update_engine/2` updates the existing engine in place
         # if one is already running.
         case Profiles.activate_exclusive(profile) do
-          {:ok, _} ->
-            # Re-fetch so layouts+bindings are preloaded for render wiring.
-            profile = Profiles.get_profile(profile_id)
+          {:ok, updated} ->
+            # Preload layouts+bindings onto the already-loaded struct rather
+            # than issuing a second `get_profile/1` fetch. `Repo.preload/2`
+            # is a no-op for associations already loaded on the input.
+            profile = Repo.preload(updated, layouts: [bindings: []])
             activate_profile_on_devices(profile)
             {:ok, profile}
 
@@ -163,14 +166,22 @@ defmodule Loupey.Orchestrator do
   end
 
   defp do_deactivate_profile(profile_id) do
-    profile = Profiles.get_profile(profile_id)
+    case Profiles.get_profile(profile_id) do
+      nil ->
+        {:error, :not_found}
 
-    if profile do
-      stop_engines_for(profile.device_type)
-      Profiles.update_profile(profile, %{"active" => false})
-      :ok
-    else
-      {:error, :not_found}
+      profile ->
+        # Update DB first, stop engines only on success. The previous order
+        # could leave the DB marked `active: true` while engines were
+        # already torn down if the update failed — worse than the inverse.
+        case Profiles.deactivate(profile) do
+          {:ok, _} ->
+            stop_engines_for(profile.device_type)
+            :ok
+
+          {:error, _} = err ->
+            err
+        end
     end
   end
 

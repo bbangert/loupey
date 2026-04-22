@@ -78,6 +78,18 @@ defmodule Loupey.Profiles do
   end
 
   @doc """
+  Flip a profile to `active: false`. Separate from `update_profile/2` so the
+  Orchestrator can order DB update before engine teardown — stopping engines
+  first and then failing the DB update leaves the system in a worse state
+  (marked active but not running) than the inverse.
+  """
+  def deactivate(%Profile{} = profile) do
+    profile
+    |> Profile.changeset(%{"active" => false})
+    |> Repo.update()
+  end
+
+  @doc """
   Atomically make `profile` the single active profile for its `device_type`.
 
   In one `Repo.transaction/1`:
@@ -96,6 +108,18 @@ defmodule Loupey.Profiles do
   profile per device type" invariant is enforced at the DB level by that
   partial unique index and at the application level by the `Orchestrator`
   GenServer serializing activations.
+
+  Correctness notes for future maintainers:
+
+  - The bulk `update_all` + changeset `update` pair is NOT atomic at the
+    row level, only at the transaction level. SQLite's default journal
+    mode (WAL) combined with `Repo.transaction/1` is what makes this
+    safe in the single-writer case.
+  - If this function is ever called from outside `Orchestrator` (which
+    serializes via GenServer), the caller must hold a lock, otherwise
+    two concurrent activations of different profiles for the same
+    `device_type` can race: both pass the `where [p, p.active == true
+    and p.id != ^profile.id]` filter and both claim the slot.
   """
   def activate_exclusive(%Profile{} = profile) do
     Repo.transaction(fn ->

@@ -21,10 +21,20 @@ defmodule Loupey.Schemas.Binding do
     timestamps()
   end
 
+  # Control-id strings are either bracketed-tuple (`"{:key, 3}"`,
+  # `"{:button, 0}"`) or bare-atom (`":left_strip"`, `":knob_ct"`). Anything
+  # else is a DB-corruption red flag — reject at changeset time.
+  @control_id_format ~r/^(\{:\w+, \d+\}|:\w+)$/
+
+  # HA entity IDs always look like `domain.object_id`, lowercase snake_case.
+  @entity_id_format ~r/^[a-z_]+\.[a-z0-9_]+$/
+
   def changeset(binding, attrs) do
     binding
     |> cast(attrs, [:control_id, :entity_id, :yaml, :layout_id])
     |> validate_required([:control_id, :yaml, :layout_id])
+    |> validate_format(:control_id, @control_id_format)
+    |> validate_format(:entity_id, @entity_id_format)
   end
 
   @doc """
