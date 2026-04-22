@@ -245,26 +245,37 @@ defmodule Loupey.Bindings.YamlParser do
     ArgumentError -> str
   end
 
-  # `~w()a` pre-creates the atoms at compile time so `to_existing_atom/1`
-  # in the whitelist branch below is guaranteed to succeed without touching
-  # the atom table at runtime. `@known_atom_strings` is the string form used
-  # in the guard — a cheap binary-membership check avoids the raise+rescue
-  # overhead of calling `safe_atom/1` on every binary YAML value (colors,
-  # entity_ids, icon paths, etc.) where the whitelist-miss case is the norm.
-  @known_atoms ~w(
-    top middle bottom left center right
-    horizontal vertical
-    to_top to_bottom to_left to_right
-    linear radial
-  )a
-  @known_atom_strings Enum.map(@known_atoms, &Atom.to_string/1)
+  # Whitelist of YAML string values that get atomized. The atom literals on
+  # the right-hand side are embedded in the compiled function body below —
+  # this is deliberate. An earlier version used `~w(...)a` + `String.to_
+  # existing_atom/1`, but that only seeded the *compile-time* atom table;
+  # the atoms weren't guaranteed to be in the beam's runtime atom table
+  # until some downstream consumer (e.g. `Loupey.Graphics.Renderer`, which
+  # pattern-matches `:to_top` et al.) happened to load first. Tests passed
+  # because ExUnit eagerly loads everything; the dev server's lazy module
+  # loading exposed the gap as `ArgumentError: not an already existing atom`.
+  # By embedding the atoms as literals in `atomize_value/1`'s returned
+  # value, they're part of YamlParser's own beam atom table and always
+  # available the moment this module loads.
+  @atom_map %{
+    "top" => :top,
+    "middle" => :middle,
+    "bottom" => :bottom,
+    "left" => :left,
+    "center" => :center,
+    "right" => :right,
+    "horizontal" => :horizontal,
+    "vertical" => :vertical,
+    "to_top" => :to_top,
+    "to_bottom" => :to_bottom,
+    "to_left" => :to_left,
+    "to_right" => :to_right,
+    "linear" => :linear,
+    "radial" => :radial
+  }
 
   defp atomize_value(%{} = map), do: atomize_keys(map)
-
-  defp atomize_value(value) when is_binary(value) and value in @known_atom_strings do
-    String.to_existing_atom(value)
-  end
-
+  defp atomize_value(value) when is_binary(value), do: Map.get(@atom_map, value, value)
   defp atomize_value(value), do: value
 
   defp resolve_inputs(map, input_values) when is_map(map) do
