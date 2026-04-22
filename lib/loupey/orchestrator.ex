@@ -131,10 +131,10 @@ defmodule Loupey.Orchestrator do
     # Refresh the cached device list — this is the single path that actually
     # hits hidraw/UART enumeration. Every other caller (`activate_profile`,
     # `status`, `stop_engines_for`, …) reads from the cache so a busy UI
-    # doesn't re-enumerate on every call.
-    refresh_discovered()
-
-    results = Devices.connect_all()
+    # doesn't re-enumerate on every call. Pass the cached list through to
+    # `Devices.connect_all/1` so we don't re-scan inside it.
+    devices = refresh_discovered()
+    results = Devices.connect_all(devices)
 
     case Profiles.list_active_profiles() do
       [] ->

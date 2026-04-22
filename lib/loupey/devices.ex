@@ -116,9 +116,16 @@ defmodule Loupey.Devices do
   Returns a list of `{:ok, pid}` or `{:error, reason}` results.
   """
   @spec connect_all() :: [{:ok, pid()} | {:error, term()}]
-  def connect_all do
-    discover()
-    |> Enum.map(fn {driver, device_ref} -> connect(driver, device_ref) end)
+  def connect_all, do: connect_all(discover())
+
+  @doc """
+  Connect to a pre-discovered list of devices. Use when the caller has
+  already paid for a `discover/0` pass (e.g. `Orchestrator` caches
+  discovery) and wants to avoid a redundant hidraw/UART scan.
+  """
+  @spec connect_all([{module(), term()}]) :: [{:ok, pid()} | {:error, term()}]
+  def connect_all(devices) when is_list(devices) do
+    Enum.map(devices, fn {driver, device_ref} -> connect(driver, device_ref) end)
   end
 
   @doc """
