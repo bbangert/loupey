@@ -110,14 +110,30 @@ from 241 µs to 0.14 µs.
 
 ## Follow-ups not in this plan
 
-- `Code.string_to_quoted/1` uses default options, which creates atoms for
-  unknown identifiers. For Loupey's single-user threat model this is fine;
-  if the blueprint-sharing surface ever lands, tighten with
-  `existing_atoms_only: true` + a compile-time atom-interning module attribute.
 - `Expression.extract_entity_refs/1` still uses regex scanning instead of
   walking the AST. Works correctly but diverges from the rest of the module;
   consider moving to AST-walk for consistency if a benchmark ever shows it
   matters (currently fires per-YAML-load, not per-render).
+
+## Post-review additions (PR #10 round 1)
+
+- **`existing_atoms_only: true`** — flagged as a follow-up originally, then
+  pulled forward after Copilot independently raised it. Added
+  `@_known_identifiers` module attribute pinning every legitimate variable
+  name + local-call name at compile time; `parse/1` now calls
+  `Code.string_to_quoted/2` with `existing_atoms_only: true`. Closes the
+  atom-exhaustion vector without waiting for the blueprint-sharing surface.
+  Behavior change: typo'd identifiers in bindings now parse-error instead
+  of silently resolving to nil — fail-fast is better UX (the `Expression`
+  wrapper still swallows errors to `nil` externally, so no caller-visible
+  change).
+- **Typespec precision** — split the `:call` AST variant by arity instead of
+  bundling the three allowed calls behind a single `[ast()]` list. More
+  precise for Dialyzer / human readers.
+- **Blueprint-smoke coverage gap** — input-rule `when:` wasn't using the
+  same bare+braced extraction as output-rule `when:`. Shipped blueprints
+  include bare input-rule conditions (`when: 'state == "playing"'`), so
+  those weren't being exercised. Fixed by mirroring the output-rule path.
 
 ## Error model
 

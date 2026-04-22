@@ -114,9 +114,17 @@ defmodule Loupey.Bindings.Expression.BlueprintSmokeTest do
       |> Enum.flat_map(fn rule ->
         when_exprs =
           case rule.when do
-            nil -> []
-            true -> []
-            expr when is_binary(expr) -> extract_template_exprs(expr)
+            nil ->
+              []
+
+            true ->
+              []
+
+            expr when is_binary(expr) ->
+              # Shipped blueprints use both bare (`when: 'state == "playing"'`)
+              # and braced (`when: "{{ state == \"on\" }}"`) forms for input-
+              # rule conditions — same as output rules. Collect both.
+              [strip_template_braces(expr) | extract_template_exprs(expr)]
           end
 
         action_exprs =

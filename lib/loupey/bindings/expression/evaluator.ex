@@ -61,7 +61,9 @@ defmodule Loupey.Bindings.Expression.Evaluator do
   @type ast ::
           {:lit, integer() | float() | binary() | boolean() | nil}
           | {:var, atom()}
-          | {:call, :state_of | :attr_of | :round, [ast()]}
+          | {:call, :state_of, [ast()]}
+          | {:call, :round, [ast()]}
+          | {:call, :attr_of, [ast()]}
           | {:op, :== | :!= | :> | :< | :>= | :<= | :+ | :- | :* | :/ | :||, [ast(), ...]}
           | {:neg, ast()}
           | {:access, ast(), ast()}
@@ -69,6 +71,23 @@ defmodule Loupey.Bindings.Expression.Evaluator do
   @allowed_calls %{state_of: 1, attr_of: 2, round: 1}
   @allowed_binary_ops ~w(== != > < >= <= + - * /)a
   # `||` is handled specially for short-circuit semantics.
+
+  # Every legitimate variable identifier a binding expression can reference.
+  # Source: `Expression.build_context/1` + `resolve_with_context/3` event
+  # context (touch / strip).
+  #
+  # Defined via `~w(...)a` so the atoms are interned at compile time. Combined
+  # with the atoms interned by `@allowed_calls` above, this means every
+  # identifier our grammar recognizes already exists in the atom table —
+  # `Code.string_to_quoted/2` is called below with `existing_atoms_only: true`,
+  # so any identifier NOT in this union fails at parse instead of interning
+  # a new atom. Closes the atom-exhaustion vector a hostile or typo-laden
+  # binding could otherwise open.
+  @known_vars ~w(
+    state attributes entity_id
+    touch_x touch_y touch_id control_id
+    strip_width strip_height control_width control_height
+  )a
 
   # ---------------------------------------------------------------------------
   # Public API
@@ -85,7 +104,7 @@ defmodule Loupey.Bindings.Expression.Evaluator do
   """
   @spec parse(String.t()) :: {:ok, ast()} | {:error, term()}
   def parse(source) when is_binary(source) do
-    case Code.string_to_quoted(source) do
+    case Code.string_to_quoted(source, existing_atoms_only: true) do
       {:ok, quoted} -> normalize(quoted)
       {:error, reason} -> {:error, {:parse, reason}}
     end
@@ -210,8 +229,11 @@ defmodule Loupey.Bindings.Expression.Evaluator do
       String.starts_with?(name_s, "__") and String.ends_with?(name_s, "__") ->
         disallowed({:special_form, name})
 
-      true ->
+      name in @known_vars ->
         {:ok, {:var, name}}
+
+      true ->
+        disallowed({:unknown_identifier, name})
     end
   end
 

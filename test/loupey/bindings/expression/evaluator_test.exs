@@ -71,8 +71,19 @@ defmodule Loupey.Bindings.Expression.EvaluatorTest do
       assert eval!("touch_y", ctx()) == 45
     end
 
-    test "missing variable resolves to nil (matches Code.eval_string rescue)" do
-      assert eval!("totally_undefined_var", ctx()) == nil
+    test "whitelisted variable missing from context resolves to nil" do
+      # `touch_y` is in the evaluator's identifier whitelist, so the parse
+      # succeeds. When the context map doesn't include it, the walker's
+      # `Map.get(ctx, :touch_y)` returns nil.
+      assert eval!("touch_y", %{}) == nil
+    end
+
+    test "identifier not in whitelist fails at parse" do
+      # Identifiers outside the known set (variable names, call names)
+      # must fail at `parse/1` — `existing_atoms_only: true` refuses to
+      # intern new atoms, so a hostile binding cannot grow the atom
+      # table via unique identifier names.
+      assert {:error, {:parse, _}} = Evaluator.parse("totally_undefined_var_xyz")
     end
   end
 
@@ -127,7 +138,10 @@ defmodule Loupey.Bindings.Expression.EvaluatorTest do
     end
 
     test "returns RHS when LHS is nil" do
-      assert eval!(~s(totally_undefined || "fallback"), ctx()) == "fallback"
+      # `state` is a whitelisted context variable, but the context here
+      # sets it to nil — short-circuit kicks in and the RHS is returned.
+      context = ctx(%{state: nil})
+      assert eval!(~s(state || "fallback"), context) == "fallback"
     end
 
     test "returns RHS when LHS is false" do
