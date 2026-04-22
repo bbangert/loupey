@@ -13,12 +13,12 @@ defmodule Loupey.Bindings.Engine do
   use GenServer
   require Logger
 
+  alias Hassock.ServiceCall
   alias Loupey.Bindings.{Expression, LayoutEngine, Profile, Rules}
   alias Loupey.Bindings.Expression.Evaluator
   alias Loupey.Device.{Control, Spec}
   alias Loupey.DeviceServer
   alias Loupey.Events.TouchEvent
-  alias Hassock.ServiceCall
   alias Loupey.HA
 
   @touch_move_debounce_ms 400

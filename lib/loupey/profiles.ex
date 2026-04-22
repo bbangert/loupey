@@ -29,6 +29,12 @@ defmodule Loupey.Profiles do
   transaction, and a partial unique index
   (`profiles_one_active_per_device_type`) on
   `(device_type) WHERE active = 1` guards against any bypass path.
+
+  > #### Performance note {: .warning}
+  > This preloads layouts + bindings, which fans out into N+1-ish
+  > queries on profiles with many bindings. Use
+  > `list_active_profile_summaries/0` instead for status displays and
+  > any other caller that only needs identity + device type.
   """
   def list_active_profiles do
     Profile

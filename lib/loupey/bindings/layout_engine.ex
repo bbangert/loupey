@@ -8,10 +8,10 @@ defmodule Loupey.Bindings.LayoutEngine do
 
   require Logger
 
+  alias Hassock.EntityState
   alias Loupey.Bindings.{Expression, Layout, Profile, Rules}
   alias Loupey.Device.{Control, Spec}
   alias Loupey.Graphics.Renderer
-  alias Hassock.EntityState
   alias Loupey.RenderCommands.{DrawBuffer, SetLED}
 
   @doc """

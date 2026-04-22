@@ -16,13 +16,13 @@ defmodule Loupey.Bindings.IntegrationTest do
 
   use ExUnit.Case
 
+  alias Hassock.Config
   alias Loupey.Bindings.{Engine, Layout, Profile, YamlParser}
   alias Loupey.Device.{Control, Spec}
   alias Loupey.Devices
   alias Loupey.DeviceServer
   alias Loupey.Events.TouchEvent
   alias Loupey.Graphics.Renderer
-  alias Hassock.Config
   alias Loupey.HA
   alias Loupey.HA.Events
   alias Loupey.RenderCommands.DrawBuffer
