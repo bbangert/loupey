@@ -208,7 +208,7 @@ defmodule Loupey.Bindings.YamlParser do
   defp parse_trigger("touch_move"), do: :touch_move
   defp parse_trigger("touch_end"), do: :touch_end
   defp parse_trigger(other) when is_atom(other), do: other
-  defp parse_trigger(other), do: String.to_atom(other)
+  defp parse_trigger(other), do: safe_atom(other)
 
   defp parse_condition(true), do: true
   defp parse_condition("true"), do: true
@@ -229,22 +229,38 @@ defmodule Loupey.Bindings.YamlParser do
 
   defp atomize_keys(map) when is_map(map) do
     Map.new(map, fn
-      {key, value} when is_binary(key) -> {String.to_atom(key), atomize_value(value)}
+      {key, value} when is_binary(key) -> {safe_atom(key), atomize_value(value)}
       {key, value} -> {key, atomize_value(value)}
     end)
   end
 
+  # Coerce a YAML-sourced string to an atom only if that atom already exists
+  # in the system. Unknown strings stay as strings — downstream pattern-matches
+  # on atom keys/triggers simply won't match, and the key is effectively
+  # ignored. Prevents an author-controlled YAML file from populating the atom
+  # table with unbounded entries (the atom table is not garbage-collected).
+  defp safe_atom(str) do
+    String.to_existing_atom(str)
+  rescue
+    ArgumentError -> str
+  end
+
+  # `~w()a` — pre-creates the atoms at compile time so `safe_atom/1` below is
+  # guaranteed to succeed for any whitelist entry without touching the atom
+  # table at runtime.
   @known_atoms ~w(
     top middle bottom left center right
     horizontal vertical
     to_top to_bottom to_left to_right
     linear radial
-  )
+  )a
 
   defp atomize_value(%{} = map), do: atomize_keys(map)
 
-  defp atomize_value(value) when is_binary(value) and value in @known_atoms,
-    do: String.to_atom(value)
+  defp atomize_value(value) when is_binary(value) do
+    atom = safe_atom(value)
+    if atom in @known_atoms, do: atom, else: value
+  end
 
   defp atomize_value(value), do: value
 
@@ -256,7 +272,7 @@ defmodule Loupey.Bindings.YamlParser do
 
   defp resolve_input_value(value, input_values) when is_binary(value) do
     Regex.replace(~r/\{\{\s*inputs\.(\w+)\s*\}\}/, value, fn _match, key ->
-      to_string(Map.get(input_values, key) || Map.get(input_values, String.to_atom(key), ""))
+      to_string(Map.get(input_values, key) || Map.get(input_values, safe_atom(key), ""))
     end)
   end
 
