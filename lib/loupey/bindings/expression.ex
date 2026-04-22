@@ -2,12 +2,23 @@ defmodule Loupey.Bindings.Expression do
   @moduledoc """
   Evaluates `{{ }}` template expressions against entity state.
 
-  Expressions are Elixir code snippets with access to:
-  - `state` — the binding entity's state string (backward compat, nil if no entity_id)
-  - `attributes` — the binding entity's attributes map (backward compat)
-  - `entity_id` — the binding entity's ID string (backward compat)
+  Thin wrapper over `Loupey.Bindings.Expression.Evaluator` — see that
+  module for the expression grammar and error model. This module owns
+  the HA context shape (what `state_of`/`attr_of` look up, how entity
+  state maps to context variables) and the template-rendering API used
+  by the rest of the bindings stack.
+
+  ## Scope
+
+  - `state` — the binding entity's state string (nil if no entity_id)
+  - `attributes` — the binding entity's attributes map
+  - `entity_id` — the binding entity's ID string
+  - Event context: `touch_x`, `touch_y`, `touch_id`, `control_id`,
+    `strip_width`, `strip_height`, `control_width`, `control_height`
+    (merged via `resolve_with_context/3`)
   - `state_of(id)` — get any entity's state string by ID
   - `attr_of(id, key)` — get any entity's attribute value by ID and key
+  - `round/1`, arithmetic, comparisons, `||`, map access via `m["k"]`
 
   ## Examples
 
@@ -16,13 +27,10 @@ defmodule Loupey.Bindings.Expression do
 
       render(~s({{ state_of("sensor.temp") }}°F), nil)
       #=> "72.5°F"
-
-      render(~s({{ attr_of("light.office", "brightness") }}), nil)
-      #=> "255"
-
   """
 
   alias Hassock.EntityState
+  alias Loupey.Bindings.Expression.Evaluator
   alias Loupey.HA
 
   @doc """
@@ -31,20 +39,19 @@ defmodule Loupey.Bindings.Expression do
   """
   @spec eval(String.t(), EntityState.t() | nil) :: term()
   def eval(expr, entity_state) do
-    bindings = build_bindings(entity_state)
-    # Rewrite state_of("x") → state_of.("x") so the binding variable is called as a function
-    rewritten = rewrite_function_calls(expr)
-    {result, _} = Code.eval_string(rewritten, bindings)
-    result
-  rescue
-    _ -> nil
+    context = build_context(entity_state)
+
+    case Evaluator.evaluate(expr, context) do
+      {:ok, value} -> value
+      {:error, _} -> nil
+    end
   end
 
   @doc """
   Evaluate a condition — returns a boolean.
   `true` (the atom/boolean) always matches.
-  Unlike before, nil entity_state no longer blocks conditions —
-  expressions using state_of() work without a binding entity.
+  nil entity_state doesn't block conditions — expressions using state_of()
+  work without a binding entity.
   """
   @spec eval_condition(String.t() | true, EntityState.t() | nil) :: boolean()
   def eval_condition(true, _entity_state), do: true
@@ -62,10 +69,13 @@ defmodule Loupey.Bindings.Expression do
   """
   @spec render(String.t(), EntityState.t() | nil) :: String.t()
   def render(template, entity_state) do
+    context = build_context(entity_state)
+
     Regex.replace(~r/\{\{\s*(.+?)\s*\}\}/, template, fn _match, expr ->
-      case eval(expr, entity_state) do
-        nil -> ""
-        value -> to_string(value)
+      case Evaluator.evaluate(expr, context) do
+        {:ok, nil} -> ""
+        {:ok, value} -> to_string(value)
+        {:error, _} -> ""
       end
     end)
   end
@@ -86,16 +96,16 @@ defmodule Loupey.Bindings.Expression do
   def resolve(value, _entity_state), do: value
 
   @doc """
-  Resolve a template string with additional context variables (e.g., touch coordinates).
-  Extra context is merged into the expression bindings.
+  Resolve a template string with additional context variables (e.g., touch
+  coordinates). Extra context is merged into the evaluator context map.
   """
   @spec resolve_with_context(String.t(), EntityState.t() | nil, map()) :: term()
   def resolve_with_context(value, entity_state, extra_context) when is_binary(value) do
     if String.contains?(value, "{{") do
-      bindings = build_bindings(entity_state) ++ Enum.to_list(extra_context)
+      context = entity_state |> build_context() |> Map.merge(extra_context)
 
       value
-      |> replace_templates(bindings)
+      |> render_with_context(context)
       |> maybe_parse_number()
     else
       value
@@ -116,17 +126,16 @@ defmodule Loupey.Bindings.Expression do
 
   def extract_entity_refs(_), do: []
 
-  defp replace_templates(value, bindings) do
-    Regex.replace(~r/\{\{\s*(.+?)\s*\}\}/, value, fn _match, expr ->
-      safe_eval(expr, bindings)
-    end)
-  end
+  # -- Internal --
 
-  defp safe_eval(expr, bindings) do
-    {result, _} = Code.eval_string(rewrite_function_calls(expr), bindings)
-    to_string(result)
-  rescue
-    _ -> ""
+  defp render_with_context(template, context) do
+    Regex.replace(~r/\{\{\s*(.+?)\s*\}\}/, template, fn _match, expr ->
+      case Evaluator.evaluate(expr, context) do
+        {:ok, nil} -> ""
+        {:ok, value} -> to_string(value)
+        {:error, _} -> ""
+      end
+    end)
   end
 
   defp maybe_parse_number(rendered) do
@@ -136,26 +145,28 @@ defmodule Loupey.Bindings.Expression do
     end
   end
 
-  # Rewrite state_of("x") → state_of.("x") and attr_of("x", "y") → attr_of.("x", "y")
-  # so Code.eval_string treats them as variable function calls, not module function calls.
-  defp rewrite_function_calls(expr) do
-    expr
-    |> String.replace("state_of(", "state_of.(")
-    |> String.replace("attr_of(", "attr_of.(")
+  # Build the evaluator context map from entity state + our two HA-backed
+  # helper functions. Keys here are the variable names expressions can
+  # reference. The `state_of` / `attr_of` entries are function refs the
+  # walker calls when it encounters `{:call, :state_of, …}` etc.
+  defp build_context(nil) do
+    %{
+      state: nil,
+      attributes: %{},
+      entity_id: nil,
+      state_of: &state_of/1,
+      attr_of: &attr_of/2
+    }
   end
 
-  # -- Bindings --
-
-  defp build_bindings(nil) do
-    [state: nil, attributes: %{}, entity_id: nil] ++ base_bindings()
-  end
-
-  defp build_bindings(%EntityState{} = es) do
-    [state: es.state, attributes: es.attributes, entity_id: es.entity_id] ++ base_bindings()
-  end
-
-  defp base_bindings do
-    [state_of: &state_of/1, attr_of: &attr_of/2]
+  defp build_context(%EntityState{} = es) do
+    %{
+      state: es.state,
+      attributes: es.attributes,
+      entity_id: es.entity_id,
+      state_of: &state_of/1,
+      attr_of: &attr_of/2
+    }
   end
 
   defp state_of(entity_id) do
