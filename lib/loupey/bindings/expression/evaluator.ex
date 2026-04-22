@@ -58,6 +58,11 @@ defmodule Loupey.Bindings.Expression.Evaluator do
 
   """
 
+  # Per-name split on the `:call` variant is the precision Elixir typespecs
+  # permit. `[ast()]` means "list of any length of ast()" — fixed-length
+  # list typespecs (e.g. `[ast(), ast()]` for 2-arg `attr_of/2`) are NOT
+  # expressible in Elixir; the compiler rejects them. Runtime arity is
+  # enforced by the pattern matches in `walk/2`.
   @type ast ::
           {:lit, integer() | float() | binary() | boolean() | nil}
           | {:var, atom()}
@@ -210,8 +215,15 @@ defmodule Loupey.Bindings.Expression.Evaluator do
 
   # Any other remote call `Mod.fun(args)` → reject. Covers `File.read!`,
   # `System.cmd`, `:os.cmd`, `Process.exit`, etc.
+  #
+  # `path` is a list of alias segment atoms (e.g. `[:File, :Stream]`) that
+  # already exist in the atom table — `existing_atoms_only: true` would
+  # have rejected the parse otherwise. Format as a joined binary for the
+  # error tuple rather than `Module.concat/1`, which would intern a *new*
+  # compound atom (`:"Elixir.File.Stream"`) if that specific combination
+  # had never been loaded — reintroducing an atom-table growth vector.
   defp normalize({{:., _, [{:__aliases__, _, path}, fun]}, _, args}) when is_list(args) do
-    disallowed({:remote_call, {Module.concat(path), fun, length(args)}})
+    disallowed({:remote_call, {format_module_path(path), fun, length(args)}})
   end
 
   # `:module.fun(args)` (Erlang-style remote call with an atom-as-module) → reject.
@@ -262,6 +274,10 @@ defmodule Loupey.Bindings.Expression.Evaluator do
   # Anything else — `{:fn, …}`, `{:&, …}`, `{:@, …}`, `{:try, …}`,
   # `{:case, …}`, tuples, lists, etc. — reject.
   defp normalize(other), do: disallowed({:ast_shape, other})
+
+  defp format_module_path(path) when is_list(path) do
+    path |> Enum.map(&Atom.to_string/1) |> Enum.join(".")
+  end
 
   defp normalize_binary_op(op, [left, right]) do
     with {:ok, l} <- normalize(left),

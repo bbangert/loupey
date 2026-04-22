@@ -30,7 +30,6 @@ defmodule Loupey.Bindings.Expression.BlueprintSmokeTest do
   end
 
   describe "every shipped blueprint's expressions parse through the evaluator" do
-    @tag :tmp_dir
     test "every `when:` condition and `{{ … }}` template parses", %{blueprints: paths} do
       results =
         Enum.flat_map(paths, fn path ->
