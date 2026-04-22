@@ -157,7 +157,10 @@ defmodule Loupey.DeviceServer do
     try do
       state.driver_module.close(state.connection)
     catch
-      _, _ -> :ok
+      kind, err ->
+        Logger.debug("DeviceServer.terminate close/1 raised (ignored): #{kind} #{inspect(err)}")
+
+        :ok
     end
 
     :ok

@@ -136,7 +136,12 @@ defmodule Loupey.Driver.Streamdeck.HidTransport do
     try do
       if state.handle, do: state.port_mod.close(state.handle)
     catch
-      _, _ -> :ok
+      kind, err ->
+        Logger.debug(
+          "StreamDeck.HIDTransport.terminate close raised (ignored): #{kind} #{inspect(err)}"
+        )
+
+        :ok
     end
 
     :ok

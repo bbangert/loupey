@@ -159,19 +159,34 @@ defmodule Loupey.Driver.Loupedeck.Connection do
     try do
       Circuits.UART.write(uart_pid, @ws_close_frame)
     catch
-      _, _ -> :ok
+      kind, err ->
+        Logger.debug(
+          "Loupedeck.Connection.force_cleanup: UART op raised (ignored): #{kind} #{inspect(err)}"
+        )
+
+        :ok
     end
 
     try do
       Circuits.UART.close(uart_pid)
     catch
-      _, _ -> :ok
+      kind, err ->
+        Logger.debug(
+          "Loupedeck.Connection.force_cleanup: UART op raised (ignored): #{kind} #{inspect(err)}"
+        )
+
+        :ok
     end
 
     try do
       Circuits.UART.stop(uart_pid)
     catch
-      _, _ -> :ok
+      kind, err ->
+        Logger.debug(
+          "Loupedeck.Connection.force_cleanup: UART op raised (ignored): #{kind} #{inspect(err)}"
+        )
+
+        :ok
     end
   end
 

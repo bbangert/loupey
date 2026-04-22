@@ -10,13 +10,7 @@ defmodule LoupeyWeb.DashboardLive do
 
     status = Loupey.Orchestrator.status()
     ha_connected = Loupey.HA.connected?()
-
-    ha_entity_count =
-      try do
-        length(Loupey.HA.get_all_states())
-      rescue
-        _ -> 0
-      end
+    ha_entity_count = length(Loupey.HA.get_all_states())
 
     {:ok,
      assign(socket,
@@ -117,13 +111,7 @@ defmodule LoupeyWeb.DashboardLive do
 
   @impl true
   def handle_info(:ha_connected, socket) do
-    ha_entity_count =
-      try do
-        length(Loupey.HA.get_all_states())
-      rescue
-        _ -> 0
-      end
-
+    ha_entity_count = length(Loupey.HA.get_all_states())
     {:noreply, assign(socket, ha_connected: true, ha_entity_count: ha_entity_count)}
   end
 

@@ -160,14 +160,6 @@ defmodule Loupey.Orchestrator do
             {:error, reason}
         end
     end
-  rescue
-    exception ->
-      Logger.error(
-        "Orchestrator: unexpected crash activating profile #{profile_id}: " <>
-          Exception.format(:error, exception, __STACKTRACE__)
-      )
-
-      {:error, {:exception, Exception.message(exception)}}
   end
 
   defp do_deactivate_profile(profile_id) do
@@ -317,6 +309,10 @@ defmodule Loupey.Orchestrator do
         :ok
     end
   rescue
-    _ -> :ok
+    err ->
+      # Stay non-fatal so boot doesn't die on HA unreachable, but surface the
+      # reason — silent swallows made this hard to debug in practice.
+      Logger.warning("Orchestrator.auto_connect_ha: #{inspect(err)}")
+      :ok
   end
 end
