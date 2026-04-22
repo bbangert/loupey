@@ -14,6 +14,7 @@ defmodule Loupey.Bindings.Engine do
   require Logger
 
   alias Loupey.Bindings.{Expression, LayoutEngine, Profile, Rules}
+  alias Loupey.Bindings.Expression.Evaluator
   alias Loupey.Device.{Control, Spec}
   alias Loupey.DeviceServer
   alias Loupey.Events.TouchEvent
@@ -128,6 +129,11 @@ defmodule Loupey.Bindings.Engine do
   end
 
   def handle_cast({:update_profile, profile}, state) do
+    # New profile → some expression sources from the old profile may no
+    # longer be referenced. Drop this process's evaluator AST cache so it
+    # doesn't accumulate stale entries across repeated edits.
+    Evaluator.clear_cache()
+
     entity_ids = collect_entity_ids(profile)
     new_entity_states = subscribe_and_fetch(entity_ids)
     entity_states = Map.merge(state.entity_states, new_entity_states)
