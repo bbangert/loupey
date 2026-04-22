@@ -12,7 +12,13 @@ defmodule Loupey.Driver.Streamdeck.HidPort do
 
   @type handle :: term()
 
-  @callback enumerate() :: [HID.DeviceInfo.t()]
+  # `lawik/hid` doesn't export a proper typespec for `HID.DeviceInfo`, so
+  # model it as a plain map here. Discovery consumers pattern-match on
+  # specific keys (`:vendor_id`, `:product_id`, `:path`) — an opaque
+  # type wouldn't help them anyway.
+  @type device_info :: map()
+
+  @callback enumerate() :: [device_info()]
   @callback open(path :: String.t()) :: {:ok, handle()} | {:error, term()}
   @callback close(handle()) :: :ok
   @callback read(handle(), size :: pos_integer()) :: {:ok, binary()} | {:error, term()}
