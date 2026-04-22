@@ -186,9 +186,20 @@ defmodule Loupey.Profiles do
     %Loupey.Bindings.Profile{
       name: profile.name,
       device_type: profile.device_type,
-      active_layout: profile.active_layout || Map.keys(layouts) |> List.first(),
+      active_layout: profile.active_layout || default_active_layout(profile.layouts),
       layouts: layouts
     }
+  end
+
+  # Default to the lowest-position layout name. Previous implementation used
+  # `Map.keys(layouts) |> List.first()`, which depended on Elixir's map
+  # iteration order — undocumented and not stable across changes to the
+  # layout set. Sorting by `:position` (the same field the editor UI
+  # orders layouts by) makes the choice deterministic.
+  defp default_active_layout([]), do: nil
+
+  defp default_active_layout(layouts) do
+    layouts |> Enum.min_by(& &1.position) |> Map.get(:name)
   end
 
   defp convert_layout(layout) do

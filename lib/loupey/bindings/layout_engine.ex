@@ -6,6 +6,8 @@ defmodule Loupey.Bindings.LayoutEngine do
   No side effects — the BindingEngine GenServer calls these functions.
   """
 
+  require Logger
+
   alias Loupey.Bindings.{Expression, Layout, Profile, Rules}
   alias Loupey.Device.{Control, Spec}
   alias Loupey.Graphics.Renderer
@@ -209,6 +211,11 @@ defmodule Loupey.Bindings.LayoutEngine do
   defp load_icon(path, max_dim) do
     {:ok, Image.thumbnail!(path, max_dim)}
   rescue
-    _ -> :error
+    error ->
+      Logger.debug(
+        "LayoutEngine.load_icon: failed to thumbnail #{inspect(path)}: #{inspect(error)}"
+      )
+
+      :error
   end
 end

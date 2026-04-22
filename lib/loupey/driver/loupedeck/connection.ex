@@ -117,33 +117,31 @@ defmodule Loupey.Driver.Loupedeck.Connection do
   end
 
   defp configure_uart(uart_pid, tty) do
-    try do
-      with :ok <- Circuits.UART.open(uart_pid, tty, speed: 256_000, active: false),
-           # Send a WebSocket close frame first in case the device is still in
-           # an active session from a prior unclean disconnect.
-           :ok <- Circuits.UART.write(uart_pid, @ws_close_frame),
-           # Small delay to let the device process the close and reset.
-           _ <- Process.sleep(50),
-           _ <- drain_uart(uart_pid),
-           :ok <- Circuits.UART.write(uart_pid, @ws_upgrade_header),
-           {:ok, _upgrade_response} <- Circuits.UART.read(uart_pid, 2000),
-           _ <- drain_uart(uart_pid),
-           :ok <-
-             Circuits.UART.configure(uart_pid,
-               framing: {Loupey.Driver.Loupedeck.Framing, []},
-               active: true
-             ) do
-        {:ok, uart_pid}
-      else
-        {:error, _} = error ->
-          force_cleanup(uart_pid)
-          error
-      end
-    rescue
-      e ->
+    with :ok <- Circuits.UART.open(uart_pid, tty, speed: 256_000, active: false),
+         # Send a WebSocket close frame first in case the device is still in
+         # an active session from a prior unclean disconnect.
+         :ok <- Circuits.UART.write(uart_pid, @ws_close_frame),
+         # Small delay to let the device process the close and reset.
+         _ <- Process.sleep(50),
+         _ <- drain_uart(uart_pid),
+         :ok <- Circuits.UART.write(uart_pid, @ws_upgrade_header),
+         {:ok, _upgrade_response} <- Circuits.UART.read(uart_pid, 2000),
+         _ <- drain_uart(uart_pid),
+         :ok <-
+           Circuits.UART.configure(uart_pid,
+             framing: {Loupey.Driver.Loupedeck.Framing, []},
+             active: true
+           ) do
+      {:ok, uart_pid}
+    else
+      {:error, _} = error ->
         force_cleanup(uart_pid)
-        {:error, e}
+        error
     end
+  rescue
+    e ->
+      force_cleanup(uart_pid)
+      {:error, e}
   end
 
   defp drain_uart(uart_pid) do

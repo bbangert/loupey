@@ -96,20 +96,16 @@ defmodule Loupey.Bindings.Engine do
 
   @impl true
   def handle_info({:init_state, initial_profile}, state) do
-    profile = initial_profile || load_profile_from_db(state.spec.type)
+    case initial_profile || load_profile_from_db(state.spec.type) do
+      nil ->
+        {:noreply, state}
 
-    entity_states =
-      if profile do
-        subscribe_and_fetch(collect_entity_ids(profile))
-      else
-        %{}
-      end
-
-    state = %{state | profile: profile, entity_states: entity_states}
-
-    if profile, do: send(self(), :render_active_layout)
-
-    {:noreply, state}
+      profile ->
+        entity_states = subscribe_and_fetch(collect_entity_ids(profile))
+        state = %{state | profile: profile, entity_states: entity_states}
+        send(self(), :render_active_layout)
+        {:noreply, state}
+    end
   end
 
   @impl true
@@ -309,20 +305,17 @@ defmodule Loupey.Bindings.Engine do
 
   defp event_control_id(%{control_id: id}), do: id
 
-  defp execute_service_call(params) do
-    domain = Map.get(params, :domain) || Map.get(params, "domain")
-    service = Map.get(params, :service) || Map.get(params, "service")
-    target = Map.get(params, :target) || Map.get(params, "target")
-
-    if domain && service do
-      HA.call_service(%ServiceCall{
-        domain: domain,
-        service: service,
-        target: format_target(target),
-        service_data: Map.get(params, :service_data, %{})
-      })
-    end
+  defp execute_service_call(%{domain: domain, service: service} = params)
+       when is_binary(domain) and is_binary(service) do
+    HA.call_service(%ServiceCall{
+      domain: domain,
+      service: service,
+      target: format_target(Map.get(params, :target)),
+      service_data: Map.get(params, :service_data, %{})
+    })
   end
+
+  defp execute_service_call(_params), do: :ok
 
   defp format_target(target) when is_binary(target), do: %{entity_id: target}
   defp format_target(target) when is_map(target), do: target
