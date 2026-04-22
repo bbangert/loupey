@@ -245,21 +245,24 @@ defmodule Loupey.Bindings.YamlParser do
     ArgumentError -> str
   end
 
-  # `~w()a` — pre-creates the atoms at compile time so `safe_atom/1` below is
-  # guaranteed to succeed for any whitelist entry without touching the atom
-  # table at runtime.
+  # `~w()a` pre-creates the atoms at compile time so `to_existing_atom/1`
+  # in the whitelist branch below is guaranteed to succeed without touching
+  # the atom table at runtime. `@known_atom_strings` is the string form used
+  # in the guard — a cheap binary-membership check avoids the raise+rescue
+  # overhead of calling `safe_atom/1` on every binary YAML value (colors,
+  # entity_ids, icon paths, etc.) where the whitelist-miss case is the norm.
   @known_atoms ~w(
     top middle bottom left center right
     horizontal vertical
     to_top to_bottom to_left to_right
     linear radial
   )a
+  @known_atom_strings Enum.map(@known_atoms, &Atom.to_string/1)
 
   defp atomize_value(%{} = map), do: atomize_keys(map)
 
-  defp atomize_value(value) when is_binary(value) do
-    atom = safe_atom(value)
-    if atom in @known_atoms, do: atom, else: value
+  defp atomize_value(value) when is_binary(value) and value in @known_atom_strings do
+    String.to_existing_atom(value)
   end
 
   defp atomize_value(value), do: value
