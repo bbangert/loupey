@@ -115,14 +115,14 @@ defmodule LoupeyWeb.ConditionBuilder do
     <div class="space-y-1.5">
       <%!-- Toggle between builder and raw --%>
       <div class="flex items-center justify-between">
-        <label class="text-[10px] text-gray-500">
+        <label class="text-base text-gray-500">
           {if @mode == :condition, do: "Condition", else: "Insert entity value"}
         </label>
         <button
           type="button"
           phx-click="toggle_raw"
           phx-target={@myself}
-          class="text-[9px] text-gray-500 hover:text-gray-300"
+          class="text-base text-gray-500 hover:text-gray-300"
         >
           {if @raw_mode, do: "Builder", else: "Raw"}
         </button>
@@ -138,7 +138,7 @@ defmodule LoupeyWeb.ConditionBuilder do
           name="raw_expr"
           value={@current_value}
           placeholder={if @mode == :condition, do: "e.g. state_of(\"light.x\") == \"on\"", else: "{{ state_of(\"sensor.temp\") }}°F"}
-          class="w-full bg-gray-700 border border-gray-600 rounded px-1.5 py-1 text-xs text-white font-mono"
+          class="w-full bg-gray-700 border border-gray-600 rounded px-1.5 py-1 text-base text-white font-mono"
         />
       </div>
 
@@ -156,7 +156,7 @@ defmodule LoupeyWeb.ConditionBuilder do
             value={@entity}
             placeholder="Select entity..."
             autocomplete="off"
-            class="w-full bg-gray-700 border border-gray-600 rounded px-1.5 py-0.5 text-[10px] text-white"
+            class="w-full bg-gray-700 border border-gray-600 rounded px-1.5 py-0.5 text-base text-white"
           />
           <div
             :if={@show_entity_dropdown and @entity_matches != []}
@@ -168,7 +168,7 @@ defmodule LoupeyWeb.ConditionBuilder do
               phx-click="pick_entity"
               phx-target={@myself}
               phx-value-entity={id}
-              class="block w-full text-left text-[10px] text-gray-300 hover:text-white hover:bg-gray-700 px-2 py-0.5 truncate"
+              class="block w-full text-left text-base text-gray-300 hover:text-white hover:bg-gray-700 px-2 py-0.5 truncate"
             >
               {id}
             </button>
@@ -181,7 +181,7 @@ defmodule LoupeyWeb.ConditionBuilder do
             phx-change="set_property"
             phx-target={@myself}
             name="property"
-            class="bg-gray-700 border border-gray-600 rounded px-1 py-0.5 text-[10px] text-white"
+            class="bg-gray-700 border border-gray-600 rounded px-1 py-0.5 text-base text-white"
           >
             <option value="state" selected={@property == "state"}>state</option>
             <option value="attribute" selected={@property == "attribute"}>attribute...</option>
@@ -190,7 +190,7 @@ defmodule LoupeyWeb.ConditionBuilder do
             phx-change="set_operator"
             phx-target={@myself}
             name="operator"
-            class="bg-gray-700 border border-gray-600 rounded px-1 py-0.5 text-[10px] text-white"
+            class="bg-gray-700 border border-gray-600 rounded px-1 py-0.5 text-base text-white"
           >
             <option :for={{label, val} <- @operators} value={val} selected={val == @operator}>{label}</option>
           </select>
@@ -202,7 +202,7 @@ defmodule LoupeyWeb.ConditionBuilder do
             name="compare_value"
             value={@compare_value}
             placeholder="value"
-            class="bg-gray-700 border border-gray-600 rounded px-1 py-0.5 text-[10px] text-white"
+            class="bg-gray-700 border border-gray-600 rounded px-1 py-0.5 text-base text-white"
           />
         </div>
 
@@ -216,7 +216,7 @@ defmodule LoupeyWeb.ConditionBuilder do
             name="attr_name"
             value={assigns[:attr_name] || ""}
             placeholder="attribute name (e.g. brightness)"
-            class="w-full bg-gray-700 border border-gray-600 rounded px-1 py-0.5 text-[10px] text-white"
+            class="w-full bg-gray-700 border border-gray-600 rounded px-1 py-0.5 text-base text-white"
           />
         </div>
 
@@ -226,7 +226,7 @@ defmodule LoupeyWeb.ConditionBuilder do
           type="button"
           phx-click="apply"
           phx-target={@myself}
-          class="w-full bg-blue-700 hover:bg-blue-600 text-white text-[10px] px-2 py-1 rounded"
+          class="w-full bg-blue-700 hover:bg-blue-600 text-white text-base px-2 py-1 rounded"
         >
           {if @mode == :condition, do: "Set condition", else: "Insert"}
         </button>

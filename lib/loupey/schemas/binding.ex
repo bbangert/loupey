@@ -22,7 +22,7 @@ defmodule Loupey.Schemas.Binding do
   end
 
   # Control-id strings are either bracketed-tuple (`"{:key, 3}"`,
-  # `"{:button, 0}"`) or bare-atom (`":left_strip"`, `":knob_ct"`). Anything
+  # `"{:button, 0}"`) or bare-atom (`":left_strip"`, `":knob_tl"`). Anything
   # else is a DB-corruption red flag — reject at changeset time.
   @control_id_format ~r/^(\{:\w+, \d+\}|:\w+)$/
 

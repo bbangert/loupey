@@ -43,7 +43,7 @@ defmodule Loupey.Device.SpecTest do
             display_id: <<0x00, 0x4D>>
           }
         },
-        %Control{id: :home, capabilities: MapSet.new([:press])}
+        %Control{id: :example_button, capabilities: MapSet.new([:press])}
       ]
     }
   end
@@ -73,7 +73,7 @@ defmodule Loupey.Device.SpecTest do
 
       assert :knob_tl in ids
       assert {:button, 0} in ids
-      assert :home in ids
+      assert :example_button in ids
       refute {:key, 0} in ids
     end
 

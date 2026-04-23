@@ -84,5 +84,12 @@ defmodule Loupey.Driver do
   """
   @callback encode_refresh(display_id :: binary()) :: term()
 
-  @optional_callbacks encode_refresh: 1
+  @doc """
+  Return the `Loupey.Device.Layout` describing this driver's device face
+  for the profile editor UI. Optional — drivers that omit it render with
+  the row-stacked fallback in `LoupeyWeb.DeviceGrid`.
+  """
+  @callback device_layout() :: Loupey.Device.Layout.t()
+
+  @optional_callbacks encode_refresh: 1, device_layout: 0
 end
