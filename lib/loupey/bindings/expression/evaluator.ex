@@ -252,6 +252,11 @@ defmodule Loupey.Bindings.Expression.Evaluator do
   # Local call: `state_of(x)`, `attr_of(x, y)`, `round(x)`.
   # Any other local call (including `self()`, `apply(...)`, `spawn(...)`,
   # user-defined-sounding calls) → reject.
+  #
+  # Complexity 10 vs credo's default 9: branches are the 1-to-1 allowlist of
+  # permitted grammar forms. Splitting would scatter the security contract
+  # across sub-functions. See commit 3b60cc1 for the full rationale.
+  # credo:disable-for-next-line Credo.Check.Refactor.CyclomaticComplexity
   defp normalize({name, _, args}) when is_atom(name) and is_list(args) do
     cond do
       name == :|| ->
