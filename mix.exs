@@ -10,7 +10,16 @@ defmodule Loupey.MixProject do
       start_permanent: Mix.env() == :prod,
       listeners: [Phoenix.CodeReloader],
       aliases: aliases(),
-      deps: deps()
+      deps: deps(),
+      # Put the Dialyzer PLT files under `priv/plts` instead of the
+      # default `_build/<env>/` location. Stable path = narrow cache key
+      # in CI (see .github/workflows/ci.yml); the PLT is expensive to
+      # build (~minutes) and cheap to load when cached.
+      dialyzer: [
+        plt_local_path: "priv/plts",
+        plt_core_path: "priv/plts",
+        ignore_warnings: ".dialyzer_ignore.exs"
+      ]
     ]
   end
 

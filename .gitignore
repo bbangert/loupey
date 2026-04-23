@@ -35,3 +35,6 @@ loupey-*.tar
 
 # Node modules (if any)
 /assets/node_modules/
+
+# Dialyzer PLT files (built on demand; cached separately in CI).
+/priv/plts/
