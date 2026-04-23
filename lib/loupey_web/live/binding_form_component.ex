@@ -448,7 +448,7 @@ defmodule LoupeyWeb.BindingFormComponent do
           ]}
         >
           <img src={"/icons/#{icon.relative}"} class="w-10 h-10 object-contain" />
-          <span class="text-base text-gray-400 truncate w-full text-center mt-0.5">{icon.name}</span>
+          <span class="text-xs text-gray-400 truncate w-full text-center mt-0.5">{icon.name}</span>
         </button>
       </div>
     </div>

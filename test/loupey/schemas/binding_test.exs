@@ -27,15 +27,12 @@ defmodule Loupey.Schemas.BindingTest do
       end
     end
 
-    test "accepts legacy colon-prefixed atom strings" do
-      # Rows written before format_control_id dropped the leading colon
-      # should still validate, so existing data isn't orphaned.
-      attrs = %{"control_id" => ":left_strip", "yaml" => "x: 1", "layout_id" => 1}
-      assert Binding.changeset(%Binding{}, attrs).valid?
-    end
-
     test "rejects clearly malformed control_ids" do
-      for bad <- ["", "not a control", "{:key}", "{:key, abc}", "knob tl"] do
+      # `:left_strip` (colon-prefixed) is rejected on purpose — the app's
+      # writers emit bare atom names via `DeviceGrid.format_control_id/1`,
+      # so accepting the colon form too would create two ways to spell the
+      # same binding and let lookups diverge from writes.
+      for bad <- ["", "not a control", "{:key}", "{:key, abc}", "knob tl", ":left_strip"] do
         refute Binding.changeset(%Binding{}, %{
                  "control_id" => bad,
                  "yaml" => "x: 1",
