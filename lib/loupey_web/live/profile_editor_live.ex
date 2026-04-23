@@ -127,14 +127,17 @@ defmodule LoupeyWeb.ProfileEditorLive do
       aria-hidden={!@open}
     />
 
-    <%!-- Drawer panel --%>
+    <%!-- Drawer panel. `inert` removes the off-screen panel from focus and
+         the accessibility tree when closed — `aria-hidden` alone does not
+         block keyboard focus, so tabbing could land on invisible controls. --%>
     <aside
       class={[
         "fixed right-0 top-0 bottom-0 z-50 w-full md:w-2/3 bg-gray-800 border-l border-gray-700 shadow-xl",
         "transition-transform duration-200 ease-out overflow-y-auto",
-        if(@open, do: "translate-x-0", else: "translate-x-full")
+        if(@open, do: "translate-x-0", else: "translate-x-full pointer-events-none")
       ]}
       aria-hidden={!@open}
+      inert={!@open}
     >
       <div class="p-6 text-base">
         <div class="flex items-center justify-between mb-4">

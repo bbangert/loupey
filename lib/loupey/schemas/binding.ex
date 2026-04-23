@@ -22,9 +22,11 @@ defmodule Loupey.Schemas.Binding do
   end
 
   # Control-id strings are either bracketed-tuple (`"{:key, 3}"`,
-  # `"{:button, 0}"`) or bare-atom (`":left_strip"`, `":knob_tl"`). Anything
-  # else is a DB-corruption red flag — reject at changeset time.
-  @control_id_format ~r/^(\{:\w+, \d+\}|:\w+)$/
+  # `"{:button, 0}"`) or atom-name (`"left_strip"`, `"knob_tl"`).
+  # `format_control_id/1` emits the bare atom name without a leading colon;
+  # legacy colon-prefixed strings (`":left_strip"`) are accepted too in
+  # case any older rows exist. Anything else is a DB-corruption red flag.
+  @control_id_format ~r/^(\{:\w+, \d+\}|:?\w+)$/
 
   # HA entity IDs always look like `domain.object_id`, lowercase snake_case.
   @entity_id_format ~r/^[a-z_]+\.[a-z0-9_]+$/

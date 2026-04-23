@@ -22,7 +22,9 @@ defmodule LoupeyWeb.DeviceGrid do
   - `layout` — `Loupey.Device.Layout` for absolute positioning.
     Falls back to the row-stacked renderer when `nil`.
   - `selected` — currently selected `control_id` or `nil`.
-  - `scale` — CSS scale factor applied to the outer wrapper (default 1.0).
+
+  When a layout is given, the face scales fluidly via CSS container
+  queries to fill its parent's inline size at any width.
   """
   attr :spec, :map, required: true
   attr :bindings, :map, required: true
