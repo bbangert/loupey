@@ -22,9 +22,10 @@ defmodule Loupey.Schemas.Binding do
   end
 
   # Control-id strings are either bracketed-tuple (`"{:key, 3}"`,
-  # `"{:button, 0}"`) or bare-atom (`":left_strip"`, `":knob_ct"`). Anything
+  # `"{:button, 0}"`) or bare atom-name (`"left_strip"`, `"knob_tl"`) —
+  # matching exactly what `DeviceGrid.format_control_id/1` emits. Anything
   # else is a DB-corruption red flag — reject at changeset time.
-  @control_id_format ~r/^(\{:\w+, \d+\}|:\w+)$/
+  @control_id_format ~r/^(\{:\w+, \d+\}|\w+)$/
 
   # HA entity IDs always look like `domain.object_id`, lowercase snake_case.
   @entity_id_format ~r/^[a-z_]+\.[a-z0-9_]+$/

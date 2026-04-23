@@ -2,16 +2,79 @@ defmodule LoupeyWeb.DeviceGrid do
   @moduledoc """
   Function component that renders a visual representation of a device's
   physical layout, with clickable controls that indicate binding status.
+
+  When a `Loupey.Device.Layout` is provided, each control is absolutely
+  positioned at its physical location on the device face. When no layout
+  is given (legacy variants without a `layout/0` callback), the component
+  falls back to a row-stacked grid — keys + strips on top, misc buttons
+  below, knobs at the bottom — which was the original rendering.
   """
   use Phoenix.Component
 
   @doc """
-  Renders the device grid. Expects:
-  - `spec` — `Loupey.Device.Spec` for layout dimensions
-  - `bindings` — map of control_id_string => binding
-  - `selected` — currently selected control_id or nil
+  Renders the device grid.
+
+  Required attrs:
+  - `spec` — `Loupey.Device.Spec` for control metadata.
+  - `bindings` — map of `control_id_string => binding`.
+
+  Optional attrs:
+  - `layout` — `Loupey.Device.Layout` for absolute positioning.
+    Falls back to the row-stacked renderer when `nil`.
+  - `selected` — currently selected `control_id` or `nil`.
+
+  When a layout is given, the face scales fluidly via CSS container
+  queries to fill its parent's inline size at any width.
   """
+  attr :spec, :map, required: true
+  attr :bindings, :map, required: true
+  attr :layout, :any, default: nil
+  attr :selected, :any, default: nil
+
+  def grid(%{layout: nil} = assigns), do: fallback_grid(assigns)
+
   def grid(assigns) do
+    ~H"""
+    <div style={"width: 100%; aspect-ratio: #{@layout.face_width} / #{@layout.face_height}; container-type: inline-size"}>
+      <div style={"width: #{@layout.face_width}px; height: #{@layout.face_height}px; position: relative; transform-origin: top left; transform: scale(calc(100cqi / #{@layout.face_width}))"}>
+        <.positioned_cell
+          :for={control <- @spec.controls}
+          :if={Map.has_key?(@layout.positions, control.id)}
+          control={control}
+          position={@layout.positions[control.id]}
+          bindings={@bindings}
+          selected={@selected}
+        />
+      </div>
+    </div>
+    """
+  end
+
+  attr :control, :map, required: true
+  attr :position, :map, required: true
+  attr :bindings, :map, required: true
+  attr :selected, :any, default: nil
+
+  defp positioned_cell(assigns) do
+    ~H"""
+    <button
+      phx-click="select_control"
+      phx-value-control={format_control_id(@control.id)}
+      style={"position: absolute; left: #{@position.x}px; top: #{@position.y}px; width: #{@position.width}px; height: #{@position.height}px"}
+      class={[
+        "border text-center font-medium text-base leading-tight flex items-center justify-center transition cursor-pointer",
+        shape_class(@position.shape),
+        status_class(@control.id, @bindings, @selected)
+      ]}
+    >
+      {short_label(@control.id)}
+    </button>
+    """
+  end
+
+  # -- Fallback renderer (used when no Layout is provided) --
+
+  defp fallback_grid(assigns) do
     controls = assigns.spec.controls
 
     keys = controls |> Enum.filter(&key_control?/1) |> Enum.sort_by(&elem(&1.id, 1))
@@ -19,8 +82,11 @@ defmodule LoupeyWeb.DeviceGrid do
     buttons = controls |> Enum.filter(&button_control?/1) |> Enum.sort_by(&elem(&1.id, 1))
     strips = Enum.filter(controls, &strip_control?/1)
 
-    scale = 1
-    key_size = if keys != [], do: hd(keys).display.width, else: 90
+    key_px = if keys != [], do: hd(keys).display.width, else: 90
+    # Assumes a 3-row key grid (the shape of every current variant). A future
+    # 2-row or 4-row device without a Layout would need this heuristic updated,
+    # but the intent is that such variants ship with a Layout and skip this
+    # fallback entirely.
     cols = length(keys) |> div(3) |> max(1)
 
     assigns =
@@ -29,24 +95,23 @@ defmodule LoupeyWeb.DeviceGrid do
       |> assign(:knobs, knobs)
       |> assign(:buttons, buttons)
       |> assign(:strips, strips)
-      |> assign(:scale, scale)
-      |> assign(:key_px, round(key_size * scale))
+      |> assign(:key_px, key_px)
       |> assign(:cols, cols)
 
     ~H"""
     <div class="space-y-4">
       <div class="flex gap-1 items-start">
         <div :for={strip <- Enum.filter(@strips, &(&1.id == :left_strip))}>
-          <.control_cell
+          <.fallback_cell
             control={strip}
             bindings={@bindings}
             selected={@selected}
-            style={"width: #{round(strip.display.width * @scale)}px; height: #{round(strip.display.height * @scale)}px"}
+            style={"width: #{strip.display.width}px; height: #{strip.display.height}px"}
           />
         </div>
 
         <div class="grid gap-1" style={"grid-template-columns: repeat(#{@cols}, #{@key_px}px)"}>
-          <.control_cell
+          <.fallback_cell
             :for={key <- @keys}
             control={key}
             bindings={@bindings}
@@ -56,17 +121,17 @@ defmodule LoupeyWeb.DeviceGrid do
         </div>
 
         <div :for={strip <- Enum.filter(@strips, &(&1.id == :right_strip))}>
-          <.control_cell
+          <.fallback_cell
             control={strip}
             bindings={@bindings}
             selected={@selected}
-            style={"width: #{round(strip.display.width * @scale)}px; height: #{round(strip.display.height * @scale)}px"}
+            style={"width: #{strip.display.width}px; height: #{strip.display.height}px"}
           />
         </div>
       </div>
 
       <div class="flex gap-1">
-        <.control_cell
+        <.fallback_cell
           :for={btn <- @buttons}
           control={btn}
           bindings={@bindings}
@@ -76,7 +141,7 @@ defmodule LoupeyWeb.DeviceGrid do
       </div>
 
       <div class="flex gap-2">
-        <.control_cell
+        <.fallback_cell
           :for={knob <- @knobs}
           control={knob}
           bindings={@bindings}
@@ -95,10 +160,8 @@ defmodule LoupeyWeb.DeviceGrid do
   attr :class, :string, default: ""
   attr :style, :string, default: ""
 
-  defp control_cell(assigns) do
+  defp fallback_cell(assigns) do
     ~H"""
-    <% has_binding = Map.has_key?(@bindings, format_control_id(@control.id)) %>
-    <% is_selected = @selected == @control.id %>
     <button
       phx-click="select_control"
       phx-value-control={format_control_id(@control.id)}
@@ -106,11 +169,7 @@ defmodule LoupeyWeb.DeviceGrid do
       class={[
         "border rounded text-center text-[9px] leading-tight flex items-center justify-center transition cursor-pointer",
         @class,
-        cond do
-          is_selected -> "border-blue-400 bg-blue-900/50 text-blue-300"
-          has_binding -> "border-green-600 bg-green-900/30 text-green-400"
-          true -> "border-gray-600 bg-gray-700/50 text-gray-500 hover:border-gray-400"
-        end
+        status_class(@control.id, @bindings, @selected)
       ]}
     >
       {short_label(@control.id)}
@@ -119,6 +178,24 @@ defmodule LoupeyWeb.DeviceGrid do
   end
 
   # -- Helpers --
+
+  defp status_class(control_id, bindings, selected) do
+    cond do
+      selected == control_id ->
+        "border-blue-400 bg-blue-900/50 text-blue-300"
+
+      Map.has_key?(bindings, format_control_id(control_id)) ->
+        "border-green-600 bg-green-900/30 text-green-400"
+
+      true ->
+        "border-gray-600 bg-gray-700/50 text-gray-500 hover:border-gray-400"
+    end
+  end
+
+  defp shape_class(:round), do: "rounded-full"
+  defp shape_class(:pill), do: "rounded-xl"
+  defp shape_class(:rect), do: "rounded"
+  defp shape_class(_), do: "rounded"
 
   defp key_control?(%{id: {:key, _}, display: %{width: w, height: h}}) when w == h, do: true
   defp key_control?(_), do: false
@@ -156,7 +233,6 @@ defmodule LoupeyWeb.DeviceGrid do
   defp short_label({:button, n}), do: "B#{n}"
   defp short_label(:left_strip), do: "L"
   defp short_label(:right_strip), do: "R"
-  defp short_label(:knob_ct), do: "CT"
   defp short_label(:knob_tl), do: "TL"
   defp short_label(:knob_tr), do: "TR"
   defp short_label(:knob_cl), do: "CL"

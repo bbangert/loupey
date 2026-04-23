@@ -54,6 +54,9 @@ defmodule Loupey.Driver.Streamdeck do
   def device_spec, do: Classic.device_spec()
 
   @impl true
+  def device_layout, do: Classic.layout()
+
+  @impl true
   def matches?(info), do: Classic.is_variant?(info)
 
   @impl true

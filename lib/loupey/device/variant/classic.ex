@@ -29,13 +29,15 @@ defmodule Loupey.Device.Variant.Classic do
 
   @behaviour Loupey.Device.Variant
 
-  alias Loupey.Device.{Control, Display, Spec}
+  alias Loupey.Device.{Control, Display, Layout, Spec}
 
   @vendor_id 0x0FD9
   @product_ids [0x0080, 0x00A5, 0x006D, 0x00B9]
   @key_size 72
   @columns 5
   @rows 3
+  # Editor-UI layout — a small margin around the 5x3 grid of 72px keys.
+  @face_margin 12
 
   @doc "The four product IDs that share this command set."
   @spec product_ids() :: [non_neg_integer()]
@@ -54,6 +56,23 @@ defmodule Loupey.Device.Variant.Classic do
     %Spec{
       type: "Stream Deck (Classic)",
       controls: key_controls()
+    }
+  end
+
+  @impl true
+  def layout do
+    positions =
+      for row <- 0..(@rows - 1), col <- 0..(@columns - 1), into: %{} do
+        key = row * @columns + col
+        x = @face_margin + col * @key_size
+        y = @face_margin + row * @key_size
+        {{:key, key}, %{x: x, y: y, width: @key_size, height: @key_size, shape: :square}}
+      end
+
+    %Layout{
+      face_width: 2 * @face_margin + @columns * @key_size,
+      face_height: 2 * @face_margin + @rows * @key_size,
+      positions: positions
     }
   end
 

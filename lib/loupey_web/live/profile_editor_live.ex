@@ -36,11 +36,13 @@ defmodule LoupeyWeb.ProfileEditorLive do
       {profile, spec} ->
         layouts = profile.layouts |> Enum.sort_by(& &1.position)
         active_layout = List.first(layouts)
+        device_layout = get_device_layout(profile.device_type)
 
         {:ok,
          assign(socket,
            profile: profile,
            spec: spec,
+           device_layout: device_layout,
            layouts: layouts,
            active_layout: active_layout,
            active_bindings: layout_bindings(active_layout),
@@ -66,127 +68,184 @@ defmodule LoupeyWeb.ProfileEditorLive do
         <span class="text-sm text-gray-400">{@profile.device_type}</span>
       </div>
 
-      <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <%!-- Left: Layout manager + Device grid --%>
-        <div class="lg:col-span-2 space-y-6">
-          <.layout_manager
-            layouts={@layouts}
-            active_layout={@active_layout}
-            show_new_layout={@show_new_layout}
-          />
+      <div class="space-y-6">
+        <.layout_actions :if={@active_layout} active_layout={@active_layout} />
 
-          <div class="bg-gray-800 rounded-lg p-6 border border-gray-700">
-            <h2 class="text-sm font-semibold text-gray-400 uppercase tracking-wide mb-4">
-              Device Layout
-              <span :if={@active_layout} class="text-blue-400 normal-case">
-                — {@active_layout.name}
-              </span>
-            </h2>
+        <.layout_manager
+          layouts={@layouts}
+          active_layout={@active_layout}
+          show_new_layout={@show_new_layout}
+        />
 
-            <div :if={@spec && @active_layout} id={"grid-#{@active_layout.id}"}>
-              <DeviceGrid.grid
-                spec={@spec}
-                bindings={@active_bindings}
-                selected={@selected_control}
-              />
-            </div>
+        <div class="bg-gray-800 rounded-lg p-6 border border-gray-700">
+          <h2 class="text-sm font-semibold text-gray-400 uppercase tracking-wide mb-4">
+            Device Layout
+            <span :if={@active_layout} class="text-blue-400 normal-case">
+              — {@active_layout.name}
+            </span>
+          </h2>
 
-            <div :if={!@active_layout} class="text-center text-gray-500 py-8">
-              Create a layout first to configure controls.
-            </div>
+          <div :if={@spec && @active_layout} id={"grid-#{@active_layout.id}"}>
+            <DeviceGrid.grid
+              spec={@spec}
+              layout={@device_layout}
+              bindings={@active_bindings}
+              selected={@selected_control}
+            />
+          </div>
+
+          <div :if={!@active_layout} class="text-center text-gray-500 py-8">
+            Create a layout first to configure controls.
           </div>
         </div>
+      </div>
 
-        <%!-- Right: Binding editor --%>
-        <div class="space-y-6">
-          <div class="bg-gray-800 rounded-lg p-4 border border-gray-700">
-            <h2 class="text-sm font-semibold text-gray-400 uppercase tracking-wide mb-3">
+      <.binding_drawer
+        :if={@active_layout}
+        open={@selected_control != nil}
+        selected_control={@selected_control}
+        editing_binding={@editing_binding}
+        editor_mode={@editor_mode}
+        entity_search={@entity_search}
+        binding_yaml={@binding_yaml}
+        control={@selected_control && Loupey.Device.Spec.find_control(@spec, @selected_control)}
+      />
+    </div>
+    """
+  end
+
+  defp binding_drawer(assigns) do
+    ~H"""
+    <%!-- Backdrop: always in DOM, opacity toggles visibility so the sibling
+         drawer keeps its DOM position and the transform transition fires.
+         Purely a visual overlay — hidden from assistive tech unconditionally;
+         the drawer's own Close button is the keyboard-accessible dismissal. --%>
+    <div
+      phx-click="close_drawer"
+      class={[
+        "fixed inset-0 bg-black/50 z-40 transition-opacity duration-200",
+        if(@open, do: "opacity-100", else: "opacity-0 pointer-events-none")
+      ]}
+      aria-hidden="true"
+      role="presentation"
+    />
+
+    <%!-- Drawer panel. `inert` removes the off-screen panel from focus and
+         the accessibility tree when closed — `aria-hidden` alone does not
+         block keyboard focus, so tabbing could land on invisible controls. --%>
+    <aside
+      class={[
+        "fixed right-0 top-0 bottom-0 z-50 w-full md:w-2/3 bg-gray-800 border-l border-gray-700 shadow-xl",
+        "transition-transform duration-200 ease-out overflow-y-auto",
+        if(@open, do: "translate-x-0", else: "translate-x-full pointer-events-none")
+      ]}
+      aria-hidden={!@open}
+      inert={!@open}
+    >
+      <div class="p-6 text-base">
+        <div class="flex items-center justify-between mb-4">
+          <div>
+            <h2 class="text-lg font-semibold text-gray-400 uppercase tracking-wide">
               Binding Editor
             </h2>
-
-            <div :if={!@selected_control} class="text-center text-gray-500 py-8 text-sm">
-              Click a control on the device grid to edit its binding.
-            </div>
-
-            <div :if={@selected_control}>
-              <div class="mb-3">
-                <span class="text-xs text-gray-400">Control:</span>
-                <span class="text-sm text-white ml-1 font-mono">{format_control_id(@selected_control)}</span>
-              </div>
-
-              <%!-- Blueprint picker --%>
-              <div class="mb-3">
-                <.live_component
-                  module={LoupeyWeb.BlueprintPicker}
-                  id="blueprint_picker"
-                  entity_search={@entity_search}
-                />
-              </div>
-
-              <%!-- Editor mode tabs --%>
-              <.editor_tabs mode={@editor_mode} />
-
-              <%!-- Visual configurator --%>
-              <div :if={@editor_mode == :visual} class="bg-gray-900 rounded-b rounded-tr p-3 border border-gray-700">
-                <.live_component
-                  module={LoupeyWeb.BindingFormComponent}
-                  id="binding_form"
-                  yaml={@binding_yaml}
-                  entity_id={@entity_search}
-                  editing={@editing_binding != nil and @editing_binding.id != nil}
-                  control={@selected_control && Loupey.Device.Spec.find_control(@spec, @selected_control)}
-                />
-              </div>
-
-              <%!-- YAML editor --%>
-              <div :if={@editor_mode == :yaml}>
-                <form phx-submit="save_binding">
-                  <textarea
-                    name="yaml"
-                    rows="18"
-                    phx-debounce="500"
-                    class="w-full bg-gray-900 border border-gray-600 rounded-b rounded-tr px-3 py-2 text-xs text-green-300 font-mono leading-relaxed"
-                  >{@binding_yaml}</textarea>
-                  <div class="flex gap-2 mt-2">
-                    <button type="submit" class="bg-blue-600 hover:bg-blue-500 text-white text-xs px-3 py-1.5 rounded">
-                      Save Binding
-                    </button>
-                    <button
-                      :if={@editing_binding && @editing_binding.id}
-                      type="button"
-                      phx-click="delete_binding"
-                      data-confirm="Remove this binding?"
-                      class="bg-red-900 hover:bg-red-800 text-red-300 text-xs px-3 py-1.5 rounded"
-                    >
-                      Remove
-                    </button>
-                  </div>
-                </form>
-              </div>
+            <div :if={@selected_control} class="mt-1">
+              <span class="text-base text-gray-400">Control:</span>
+              <span class="text-lg text-white ml-1 font-mono">{format_control_id(@selected_control)}</span>
             </div>
           </div>
+          <button
+            type="button"
+            phx-click="close_drawer"
+            class="text-2xl text-gray-400 hover:text-white px-3 py-1 rounded hover:bg-gray-700"
+            aria-label="Close"
+          >
+            &times;
+          </button>
+        </div>
 
-          <%!-- Layout actions --%>
-          <div :if={@active_layout} class="bg-gray-800 rounded-lg p-4 border border-gray-700">
-            <h2 class="text-sm font-semibold text-gray-400 uppercase tracking-wide mb-3">Layout Actions</h2>
-            <div class="space-y-2">
-              <button
-                phx-click="set_active_layout"
-                class="w-full text-sm bg-green-800 hover:bg-green-700 text-white px-3 py-2 rounded-lg text-left"
-              >
-                Set as default layout
-              </button>
-              <button
-                phx-click="delete_layout"
-                phx-value-id={@active_layout.id}
-                data-confirm="Delete this layout and all its bindings?"
-                class="w-full text-sm bg-red-900 hover:bg-red-800 text-red-300 px-3 py-2 rounded-lg text-left"
-              >
-                Delete layout
-              </button>
-            </div>
+        <div :if={@selected_control}>
+          <%!-- Blueprint picker --%>
+          <div class="mb-3">
+            <.live_component
+              module={LoupeyWeb.BlueprintPicker}
+              id="blueprint_picker"
+              entity_search={@entity_search}
+            />
+          </div>
+
+          <%!-- Editor mode tabs --%>
+          <.editor_tabs mode={@editor_mode} />
+
+          <%!-- Visual configurator --%>
+          <div
+            :if={@editor_mode == :visual}
+            class="bg-gray-900 rounded-b rounded-tr p-3 border border-gray-700"
+          >
+            <.live_component
+              module={LoupeyWeb.BindingFormComponent}
+              id="binding_form"
+              yaml={@binding_yaml}
+              entity_id={@entity_search}
+              editing={@editing_binding != nil and @editing_binding.id != nil}
+              control={@control}
+            />
+          </div>
+
+          <%!-- YAML editor --%>
+          <div :if={@editor_mode == :yaml}>
+            <form phx-submit="save_binding">
+              <textarea
+                name="yaml"
+                rows="18"
+                phx-debounce="500"
+                class="w-full bg-gray-900 border border-gray-600 rounded-b rounded-tr px-3 py-2 text-base text-green-300 font-mono leading-relaxed"
+              >{@binding_yaml}</textarea>
+              <div class="flex gap-2 mt-2">
+                <button
+                  type="submit"
+                  class="bg-blue-600 hover:bg-blue-500 text-white text-base px-4 py-2 rounded"
+                >
+                  Save Binding
+                </button>
+                <button
+                  :if={@editing_binding && @editing_binding.id}
+                  type="button"
+                  phx-click="delete_binding"
+                  data-confirm="Remove this binding?"
+                  class="bg-red-900 hover:bg-red-800 text-red-300 text-base px-4 py-2 rounded"
+                >
+                  Remove
+                </button>
+              </div>
+            </form>
           </div>
         </div>
+      </div>
+    </aside>
+    """
+  end
+
+  defp layout_actions(assigns) do
+    ~H"""
+    <div class="bg-gray-800 rounded-lg p-4 border border-gray-700">
+      <h2 class="text-sm font-semibold text-gray-400 uppercase tracking-wide mb-3">
+        Layout Actions
+      </h2>
+      <div class="flex gap-2">
+        <button
+          phx-click="set_active_layout"
+          class="text-sm bg-green-800 hover:bg-green-700 text-white px-3 py-2 rounded-lg"
+        >
+          Set as default layout
+        </button>
+        <button
+          phx-click="delete_layout"
+          phx-value-id={@active_layout.id}
+          data-confirm="Delete this layout and all its bindings?"
+          class="text-sm bg-red-900 hover:bg-red-800 text-red-300 px-3 py-2 rounded-lg"
+        >
+          Delete layout
+        </button>
       </div>
     </div>
     """
@@ -242,7 +301,7 @@ defmodule LoupeyWeb.ProfileEditorLive do
         phx-click="set_editor_mode"
         phx-value-mode={mode}
         class={[
-          "text-xs px-3 py-1 rounded-t capitalize",
+          "text-base px-4 py-2 rounded-t capitalize",
           if(@mode == mode, do: "bg-gray-900 text-white", else: "bg-gray-700 text-gray-400")
         ]}
       >
@@ -309,6 +368,16 @@ defmodule LoupeyWeb.ProfileEditorLive do
     end
 
     {:noreply, socket |> reload_profile() |> put_flash(:info, "Default layout set")}
+  end
+
+  def handle_event("close_drawer", _params, socket) do
+    {:noreply,
+     assign(socket,
+       selected_control: nil,
+       editing_binding: nil,
+       binding_yaml: "",
+       entity_search: ""
+     )}
   end
 
   def handle_event("select_control", %{"control" => control_id_str}, socket) do
@@ -503,6 +572,16 @@ defmodule LoupeyWeb.ProfileEditorLive do
     case Loupey.Devices.driver_for_type(device_type) do
       nil -> nil
       driver -> driver.device_spec()
+    end
+  end
+
+  defp get_device_layout(device_type) do
+    case Loupey.Devices.driver_for_type(device_type) do
+      nil ->
+        nil
+
+      driver ->
+        if function_exported?(driver, :device_layout, 0), do: driver.device_layout()
     end
   end
 

@@ -23,11 +23,11 @@ defmodule LoupeyWeb.BlueprintPicker do
   def render(assigns) do
     ~H"""
     <div>
-      <label class="block text-xs text-gray-400 mb-1">Start from Blueprint</label>
+      <label class="block text-base text-gray-400 mb-1">Start from Blueprint</label>
       <form phx-change="select" phx-target={@myself}>
         <select
           name="blueprint"
-          class="w-full bg-gray-700 border border-gray-600 rounded px-2 py-1 text-sm text-white"
+          class="w-full bg-gray-700 border border-gray-600 rounded px-2 py-1 text-base text-white"
         >
           <option value="">— Choose a blueprint —</option>
           <option :for={bp <- @blueprints} value={bp.id}>{bp.name} — {bp.description}</option>
@@ -36,20 +36,20 @@ defmodule LoupeyWeb.BlueprintPicker do
 
       <div :if={@selected} class="mt-2 bg-gray-900 rounded p-3 border border-gray-700">
         <div class="flex items-center justify-between mb-2">
-          <h3 class="text-xs font-semibold text-blue-400">{@selected.name}</h3>
-          <button phx-click="cancel" phx-target={@myself} class="text-[10px] text-gray-400 hover:text-white">
+          <h3 class="text-base font-semibold text-blue-400">{@selected.name}</h3>
+          <button phx-click="cancel" phx-target={@myself} class="text-base text-gray-400 hover:text-white">
             Cancel
           </button>
         </div>
         <form phx-submit="apply" phx-target={@myself} class="space-y-2">
           <input type="hidden" name="blueprint_id" value={@selected.id} />
           <div :for={{name, config} <- @selected.inputs}>
-            <label class="block text-[10px] text-gray-500 mb-0.5">{config.description || name}</label>
+            <label class="block text-base text-gray-500 mb-0.5">{config.description || name}</label>
             <.blueprint_field name={name} config={config} entity_search={@entity_search} />
           </div>
           <button
             type="submit"
-            class="w-full bg-blue-600 hover:bg-blue-500 text-white text-xs px-3 py-2 rounded-lg mt-2"
+            class="w-full bg-blue-600 hover:bg-blue-500 text-white text-base px-3 py-2 rounded-lg mt-2"
           >
             Apply Blueprint
           </button>
@@ -83,7 +83,7 @@ defmodule LoupeyWeb.BlueprintPicker do
       type="text"
       name={@input_name}
       value={@default}
-      class="w-full bg-gray-700 border border-gray-600 rounded px-1.5 py-1 text-xs text-white"
+      class="w-full bg-gray-700 border border-gray-600 rounded px-1.5 py-1 text-base text-white"
     />
     <input
       :if={@type == "color"}
@@ -97,7 +97,7 @@ defmodule LoupeyWeb.BlueprintPicker do
       type="number"
       name={@input_name}
       value={@default}
-      class="w-full bg-gray-700 border border-gray-600 rounded px-1.5 py-1 text-xs text-white"
+      class="w-full bg-gray-700 border border-gray-600 rounded px-1.5 py-1 text-base text-white"
     />
     <input
       :if={@type == "icon"}
@@ -105,7 +105,7 @@ defmodule LoupeyWeb.BlueprintPicker do
       name={@input_name}
       value={@default}
       placeholder="icons/neon_blue/Lights_On.png"
-      class="w-full bg-gray-700 border border-gray-600 rounded px-1.5 py-1 text-xs text-white"
+      class="w-full bg-gray-700 border border-gray-600 rounded px-1.5 py-1 text-base text-white"
     />
     """
   end

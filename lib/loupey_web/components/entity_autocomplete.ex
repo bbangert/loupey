@@ -63,7 +63,7 @@ defmodule LoupeyWeb.EntityAutocomplete do
         value={@search}
         placeholder={@placeholder}
         autocomplete="off"
-        class="w-full bg-gray-700 border border-gray-600 rounded px-2 py-1 text-sm text-white"
+        class="w-full bg-gray-700 border border-gray-600 rounded px-2 py-1 text-base text-white"
       />
       <div
         :if={@show_dropdown and @matches != []}
@@ -75,7 +75,7 @@ defmodule LoupeyWeb.EntityAutocomplete do
           phx-click="pick"
           phx-target={@myself}
           phx-value-entity={id}
-          class="block w-full text-left text-xs text-gray-300 hover:text-white hover:bg-gray-700 px-2 py-1 truncate"
+          class="block w-full text-left text-base text-gray-300 hover:text-white hover:bg-gray-700 px-2 py-1 truncate"
         >
           {id}
         </button>

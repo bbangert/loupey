@@ -101,23 +101,23 @@ defmodule LoupeyWeb.BindingFormComponent do
     ~H"""
     <div>
       <div class="flex items-center justify-between mb-2">
-        <h3 class="text-xs font-semibold text-gray-400 uppercase">Input Rules</h3>
+        <h3 class="text-base font-semibold text-gray-400 uppercase">Input Rules</h3>
         <button
           phx-click="add_input_rule"
           phx-target={@myself}
-          class="text-[10px] bg-gray-700 hover:bg-gray-600 text-white px-2 py-0.5 rounded"
+          class="text-base bg-gray-700 hover:bg-gray-600 text-white px-2 py-0.5 rounded"
         >
           + Add
         </button>
       </div>
       <div :for={{rule, idx} <- Enum.with_index(@form_data.input_rules)} class="bg-gray-900 rounded p-2 mb-2 space-y-2">
         <div class="flex items-center justify-between">
-          <span class="text-[10px] text-gray-500">Rule {idx + 1}</span>
+          <span class="text-base text-gray-500">Rule {idx + 1}</span>
           <button
             phx-click="remove_input_rule"
             phx-target={@myself}
             phx-value-idx={idx}
-            class="text-[10px] text-red-400 hover:text-red-300"
+            class="text-base text-red-400 hover:text-red-300"
           >
             Remove
           </button>
@@ -125,10 +125,10 @@ defmodule LoupeyWeb.BindingFormComponent do
         <form phx-change="update_input_rule_form" phx-target={@myself} class="grid grid-cols-2 gap-2">
           <input type="hidden" name="idx" value={idx} />
           <div>
-            <label class="text-[10px] text-gray-500">Trigger</label>
+            <label class="text-base text-gray-500">Trigger</label>
             <select
               name="on"
-              class="w-full bg-gray-700 border border-gray-600 rounded px-1.5 py-1 text-xs text-white"
+              class="w-full bg-gray-700 border border-gray-600 rounded px-1.5 py-1 text-base text-white"
             >
               <option :for={{label, val} <- trigger_options_for(@control)} value={val} selected={val == rule.on}>
                 {label}
@@ -136,25 +136,25 @@ defmodule LoupeyWeb.BindingFormComponent do
             </select>
           </div>
           <div>
-            <label class="text-[10px] text-gray-500">Condition (optional)</label>
+            <label class="text-base text-gray-500">Condition (optional)</label>
             <input
               type="text"
               name="when"
               value={rule[:when] || ""}
               phx-debounce="300"
               placeholder="e.g. state_of(...) == ..."
-              class="w-full bg-gray-700 border border-gray-600 rounded px-1.5 py-1 text-xs text-white font-mono"
+              class="w-full bg-gray-700 border border-gray-600 rounded px-1.5 py-1 text-base text-white font-mono"
             />
           </div>
         </form>
         <div class="ml-2 border-l-2 border-gray-700 pl-2 space-y-2">
           <div class="flex items-center gap-2">
-            <span class="text-[9px] text-gray-500 uppercase">Actions</span>
+            <span class="text-base text-gray-500 uppercase">Actions</span>
             <button
               phx-click="add_action"
               phx-target={@myself}
               phx-value-rule-idx={idx}
-              class="text-[9px] bg-gray-700 hover:bg-gray-600 text-white px-1.5 py-0.5 rounded"
+              class="text-base bg-gray-700 hover:bg-gray-600 text-white px-1.5 py-0.5 rounded"
             >
               + Add
             </button>
@@ -187,7 +187,7 @@ defmodule LoupeyWeb.BindingFormComponent do
       <div class="flex items-center justify-between">
         <select
           name="action_type"
-          class="bg-gray-700 border border-gray-600 rounded px-1 py-0.5 text-[10px] text-white"
+          class="bg-gray-700 border border-gray-600 rounded px-1 py-0.5 text-base text-white"
         >
           <option :for={{label, val} <- @action_options} value={val} selected={val == @action[:action]}>
             {label}
@@ -199,7 +199,7 @@ defmodule LoupeyWeb.BindingFormComponent do
           phx-target={@myself}
           phx-value-rule-idx={@rule_idx}
           phx-value-action-idx={@action_idx}
-          class="text-[9px] text-red-400 hover:text-red-300"
+          class="text-base text-red-400 hover:text-red-300"
         >
           ✕
         </button>
@@ -208,7 +208,7 @@ defmodule LoupeyWeb.BindingFormComponent do
         <div>
           <select
             name="domain"
-            class="w-full bg-gray-700 border border-gray-600 rounded px-1 py-0.5 text-[10px] text-white"
+            class="w-full bg-gray-700 border border-gray-600 rounded px-1 py-0.5 text-base text-white"
           >
             <option value="">Domain...</option>
             <option :for={d <- @ha_domains} value={d} selected={d == @action[:domain]}>{d}</option>
@@ -222,12 +222,12 @@ defmodule LoupeyWeb.BindingFormComponent do
               value={@action[:service] || ""}
               phx-debounce="300"
               placeholder="Service name (e.g. toggle)"
-              class="w-full bg-gray-700 border border-gray-600 rounded px-1 py-0.5 text-[10px] text-white"
+              class="w-full bg-gray-700 border border-gray-600 rounded px-1 py-0.5 text-base text-white"
             />
           <% else %>
             <select
               name="service"
-              class="w-full bg-gray-700 border border-gray-600 rounded px-1 py-0.5 text-[10px] text-white"
+              class="w-full bg-gray-700 border border-gray-600 rounded px-1 py-0.5 text-base text-white"
             >
               <option value="">Service...</option>
               <option :for={s <- services_for_domain(@action[:domain], @ha_services)} value={s} selected={s == @action[:service]}>{s}</option>
@@ -236,7 +236,7 @@ defmodule LoupeyWeb.BindingFormComponent do
         </div>
       </div>
       <div :if={@action[:action] == "call_service"}>
-        <label class="text-[9px] text-gray-500">Target entity</label>
+        <label class="text-base text-gray-500">Target entity</label>
         <.live_component
           module={LoupeyWeb.EntityAutocomplete}
           id={"action_target_#{@rule_idx}_#{@action_idx}"}
@@ -252,7 +252,7 @@ defmodule LoupeyWeb.BindingFormComponent do
           rows="1"
           phx-debounce="300"
           placeholder="key: value (one per line)"
-          class="w-full bg-gray-700 border border-gray-600 rounded px-1 py-0.5 text-[10px] text-white font-mono resize-y"
+          class="w-full bg-gray-700 border border-gray-600 rounded px-1 py-0.5 text-base text-white font-mono resize-y"
         >{format_service_data(@action[:service_data])}</textarea>
       </div>
       <div :if={@action[:action] == "switch_layout"}>
@@ -262,7 +262,7 @@ defmodule LoupeyWeb.BindingFormComponent do
           value={@action[:layout] || ""}
           phx-debounce="300"
           placeholder="Layout name"
-          class="w-full bg-gray-700 border border-gray-600 rounded px-1 py-0.5 text-[10px] text-white"
+          class="w-full bg-gray-700 border border-gray-600 rounded px-1 py-0.5 text-base text-white"
         />
       </div>
     </form>
@@ -273,11 +273,11 @@ defmodule LoupeyWeb.BindingFormComponent do
     ~H"""
     <div>
       <div class="flex items-center justify-between mb-2">
-        <h3 class="text-xs font-semibold text-gray-400 uppercase">Output Rules</h3>
+        <h3 class="text-base font-semibold text-gray-400 uppercase">Output Rules</h3>
         <button
           phx-click="add_output_rule"
           phx-target={@myself}
-          class="text-[10px] bg-gray-700 hover:bg-gray-600 text-white px-2 py-0.5 rounded"
+          class="text-base bg-gray-700 hover:bg-gray-600 text-white px-2 py-0.5 rounded"
         >
           + Add
         </button>
@@ -290,13 +290,13 @@ defmodule LoupeyWeb.BindingFormComponent do
       >
         <input type="hidden" name="idx" value={idx} />
         <div class="flex items-center justify-between">
-          <span class="text-[10px] text-gray-500">Rule {idx + 1}</span>
+          <span class="text-base text-gray-500">Rule {idx + 1}</span>
           <button
             type="button"
             phx-click="remove_output_rule"
             phx-target={@myself}
             phx-value-idx={idx}
-            class="text-[10px] text-red-400 hover:text-red-300"
+            class="text-base text-red-400 hover:text-red-300"
           >
             Remove
           </button>
@@ -310,20 +310,20 @@ defmodule LoupeyWeb.BindingFormComponent do
         />
         <div class="grid grid-cols-2 gap-2">
           <div>
-            <label class="text-[10px] text-gray-500">Background</label>
+            <label class="text-base text-gray-500">Background</label>
             <input type="color" name="background" value={rule[:background] || "#000000"}
               class="w-full h-7 bg-gray-700 border border-gray-600 rounded cursor-pointer"
             />
           </div>
           <div>
-            <label class="text-[10px] text-gray-500">LED Color</label>
+            <label class="text-base text-gray-500">LED Color</label>
             <input type="color" name="color" value={rule[:color] || "#ffffff"}
               class="w-full h-7 bg-gray-700 border border-gray-600 rounded cursor-pointer"
             />
           </div>
         </div>
         <div>
-          <label class="text-[10px] text-gray-500">Icon</label>
+          <label class="text-base text-gray-500">Icon</label>
           <div class="flex gap-1">
             <input
               type="text"
@@ -332,14 +332,14 @@ defmodule LoupeyWeb.BindingFormComponent do
               phx-debounce="300"
               placeholder="Click Browse to select"
               readonly
-              class="flex-1 bg-gray-700 border border-gray-600 rounded px-1.5 py-1 text-xs text-white truncate"
+              class="flex-1 bg-gray-700 border border-gray-600 rounded px-1.5 py-1 text-base text-white truncate"
             />
             <button
               type="button"
               phx-click="toggle_icon_browser"
               phx-target={@myself}
               phx-value-idx={idx}
-              class="text-[10px] bg-gray-600 hover:bg-gray-500 text-white px-2 py-1 rounded whitespace-nowrap"
+              class="text-base bg-gray-600 hover:bg-gray-500 text-white px-2 py-1 rounded whitespace-nowrap"
             >
               Browse
             </button>
@@ -349,7 +349,7 @@ defmodule LoupeyWeb.BindingFormComponent do
               phx-click="clear_icon"
               phx-target={@myself}
               phx-value-idx={idx}
-              class="text-[10px] bg-gray-700 hover:bg-gray-600 text-red-400 px-1.5 py-1 rounded"
+              class="text-base bg-gray-700 hover:bg-gray-600 text-red-400 px-1.5 py-1 rounded"
             >
               ✕
             </button>
@@ -364,20 +364,20 @@ defmodule LoupeyWeb.BindingFormComponent do
         </div>
         <div class="grid grid-cols-3 gap-2">
           <div>
-            <label class="text-[10px] text-gray-500">Fill amount</label>
+            <label class="text-base text-gray-500">Fill amount</label>
             <input
               type="text"
               name="fill_amount"
               value={get_in(rule, [:fill, :amount]) || ""}
               phx-debounce="300"
               placeholder="50 or {{ expr }}"
-              class="w-full bg-gray-700 border border-gray-600 rounded px-1.5 py-1 text-xs text-white"
+              class="w-full bg-gray-700 border border-gray-600 rounded px-1.5 py-1 text-base text-white"
             />
           </div>
           <div>
-            <label class="text-[10px] text-gray-500">Direction</label>
+            <label class="text-base text-gray-500">Direction</label>
             <select name="fill_direction"
-              class="w-full bg-gray-700 border border-gray-600 rounded px-1.5 py-1 text-xs text-white"
+              class="w-full bg-gray-700 border border-gray-600 rounded px-1.5 py-1 text-base text-white"
             >
               <option value="">None</option>
               <option :for={{label, val} <- @direction_options} value={val} selected={val == to_string(get_in(rule, [:fill, :direction]) || "")}>
@@ -386,7 +386,7 @@ defmodule LoupeyWeb.BindingFormComponent do
             </select>
           </div>
           <div>
-            <label class="text-[10px] text-gray-500">Fill color</label>
+            <label class="text-base text-gray-500">Fill color</label>
             <input type="color" name="fill_color" value={get_in(rule, [:fill, :color]) || "#ffffff"}
               class="w-full h-7 bg-gray-700 border border-gray-600 rounded cursor-pointer"
             />
@@ -394,13 +394,13 @@ defmodule LoupeyWeb.BindingFormComponent do
         </div>
         <div class="grid grid-cols-4 gap-2">
           <div class="col-span-2">
-            <label class="text-[10px] text-gray-500">Text</label>
+            <label class="text-base text-gray-500">Text</label>
             <textarea
               name="text_content"
               rows="2"
               phx-debounce="300"
               placeholder="Text or use Insert below"
-              class="w-full bg-gray-700 border border-gray-600 rounded px-1.5 py-1 text-xs text-white font-mono resize-y"
+              class="w-full bg-gray-700 border border-gray-600 rounded px-1.5 py-1 text-base text-white font-mono resize-y"
             >{get_text_content(rule[:text]) || ""}</textarea>
             <.live_component
               module={LoupeyWeb.ConditionBuilder}
@@ -409,15 +409,15 @@ defmodule LoupeyWeb.BindingFormComponent do
             />
           </div>
           <div>
-            <label class="text-[10px] text-gray-500">Text color</label>
+            <label class="text-base text-gray-500">Text color</label>
             <input type="color" name="text_color" value={get_text_color(rule[:text])}
               class="w-full h-7 bg-gray-700 border border-gray-600 rounded cursor-pointer"
             />
           </div>
           <div>
-            <label class="text-[10px] text-gray-500">Align</label>
+            <label class="text-base text-gray-500">Align</label>
             <select name="text_valign"
-              class="w-full bg-gray-700 border border-gray-600 rounded px-1.5 py-1 text-xs text-white"
+              class="w-full bg-gray-700 border border-gray-600 rounded px-1.5 py-1 text-base text-white"
             >
               <option :for={{label, val} <- @valign_options} value={val} selected={val == to_string(get_text_valign(rule[:text]))}>
                 {label}
@@ -433,7 +433,7 @@ defmodule LoupeyWeb.BindingFormComponent do
   defp icon_browser(assigns) do
     ~H"""
     <div class="mt-1 bg-gray-900 border border-gray-600 rounded-lg p-2 max-h-52 overflow-y-auto">
-      <div :if={@icon_files == []} class="text-xs text-gray-500 p-2">No icons found</div>
+      <div :if={@icon_files == []} class="text-base text-gray-500 p-2">No icons found</div>
       <div class="grid grid-cols-4 gap-1">
         <button
           :for={icon <- @icon_files}
@@ -448,7 +448,7 @@ defmodule LoupeyWeb.BindingFormComponent do
           ]}
         >
           <img src={"/icons/#{icon.relative}"} class="w-10 h-10 object-contain" />
-          <span class="text-[8px] text-gray-400 truncate w-full text-center mt-0.5">{icon.name}</span>
+          <span class="text-xs text-gray-400 truncate w-full text-center mt-0.5">{icon.name}</span>
         </button>
       </div>
     </div>
@@ -461,7 +461,7 @@ defmodule LoupeyWeb.BindingFormComponent do
       <button
         phx-click="save_from_visual"
         phx-target={@myself}
-        class="flex-1 bg-blue-600 hover:bg-blue-500 text-white text-xs px-3 py-2 rounded-lg"
+        class="flex-1 bg-blue-600 hover:bg-blue-500 text-white text-base px-3 py-2 rounded-lg"
       >
         Save Binding
       </button>
@@ -470,7 +470,7 @@ defmodule LoupeyWeb.BindingFormComponent do
         phx-click="delete_binding"
         phx-target={@myself}
         data-confirm="Remove this binding?"
-        class="bg-red-900 hover:bg-red-800 text-red-300 text-xs px-3 py-2 rounded-lg"
+        class="bg-red-900 hover:bg-red-800 text-red-300 text-base px-3 py-2 rounded-lg"
       >
         Remove
       </button>

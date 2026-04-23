@@ -34,9 +34,11 @@ defmodule Loupey.Driver.Loupedeck do
 
   @max_brightness 10
 
-  # Hardware button ID → control_id mapping
+  # Hardware button ID → control_id mapping. Covers the six physical
+  # knobs (0x01..0x06) and eight press-only buttons (0x07..0x0E) on
+  # the Loupedeck Live. parse_button_press/1 and parse_knob_rotate/1
+  # fall back to an empty event list when an unmapped hw_id arrives.
   @button_ids %{
-    0x00 => :knob_ct,
     0x01 => :knob_tl,
     0x02 => :knob_cl,
     0x03 => :knob_bl,
@@ -50,19 +52,7 @@ defmodule Loupey.Driver.Loupedeck do
     0x0B => {:button, 4},
     0x0C => {:button, 5},
     0x0D => {:button, 6},
-    0x0E => {:button, 7},
-    0x0F => :home,
-    0x10 => :undo,
-    0x11 => :keyboard,
-    0x12 => :enter,
-    0x13 => :save,
-    0x14 => :fn_l,
-    0x15 => :a,
-    0x16 => :c,
-    0x17 => :fn_r,
-    0x18 => :b,
-    0x19 => :d,
-    0x1A => :e
+    0x0E => {:button, 7}
   }
 
   # Reverse map: control_id → hardware button ID
@@ -79,6 +69,9 @@ defmodule Loupey.Driver.Loupedeck do
 
   @impl true
   def device_spec, do: Variant.Live.device_spec()
+
+  @impl true
+  def device_layout, do: Variant.Live.layout()
 
   @impl true
   def matches?(device_info) do

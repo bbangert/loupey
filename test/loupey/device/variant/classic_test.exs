@@ -1,7 +1,7 @@
 defmodule Loupey.Device.Variant.ClassicTest do
   use ExUnit.Case, async: true
 
-  alias Loupey.Device.{Control, Spec}
+  alias Loupey.Device.{Control, Layout, Spec}
   alias Loupey.Device.Variant.Classic
 
   describe "is_variant?/1" do
@@ -82,6 +82,37 @@ defmodule Loupey.Device.Variant.ClassicTest do
     test "Spec.find_control/2 can look up every key", %{spec: spec} do
       for n <- 0..14 do
         assert %Control{id: {:key, ^n}} = Spec.find_control(spec, {:key, n})
+      end
+    end
+  end
+
+  describe "layout/0" do
+    setup do
+      %{layout: Classic.layout(), spec: Classic.device_spec()}
+    end
+
+    test "returns a %Layout{} sized to the 5x3 key grid", %{layout: layout} do
+      assert %Layout{} = layout
+      assert layout.face_width >= 5 * 72
+      assert layout.face_height >= 3 * 72
+    end
+
+    test "every control has a square layout position", %{layout: layout, spec: spec} do
+      for control <- spec.controls do
+        pos = Map.fetch!(layout.positions, control.id)
+        assert pos.width == 72
+        assert pos.height == 72
+        assert pos.shape == :square
+      end
+    end
+
+    test "key positions mirror the 5x3 row-major grid", %{layout: layout} do
+      for n <- 0..14 do
+        pos = Map.fetch!(layout.positions, {:key, n})
+        col = rem(n, 5)
+        row = div(n, 5)
+        assert pos.x - hd(Enum.sort(for i <- 0..4, do: layout.positions[{:key, i}].x)) == col * 72
+        assert pos.y - layout.positions[{:key, 0}].y == row * 72
       end
     end
   end
