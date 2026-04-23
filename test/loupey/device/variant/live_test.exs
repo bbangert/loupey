@@ -118,9 +118,14 @@ defmodule Loupey.Device.Variant.LiveTest do
     end
 
     test "the 8 press buttons are round and sit below the display row", %{layout: layout} do
-      [first_key | _] = Enum.filter(Map.keys(layout.positions), &match?({:key, _}, &1))
-      key_pos = Map.fetch!(layout.positions, first_key)
-      display_bottom = key_pos.y + 3 * key_pos.height
+      # Derive the display bottom deterministically from all key positions —
+      # Map.keys/1 has no guaranteed order, so picking "the first key" out of
+      # the map could land on a row-1 or row-2 key and miscompute the bottom.
+      display_bottom =
+        layout.positions
+        |> Enum.filter(fn {id, _} -> match?({:key, _}, id) end)
+        |> Enum.map(fn {_id, pos} -> pos.y + pos.height end)
+        |> Enum.max()
 
       ys =
         for i <- 0..7 do

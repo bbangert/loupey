@@ -117,14 +117,17 @@ defmodule LoupeyWeb.ProfileEditorLive do
   defp binding_drawer(assigns) do
     ~H"""
     <%!-- Backdrop: always in DOM, opacity toggles visibility so the sibling
-         drawer keeps its DOM position and the transform transition fires. --%>
+         drawer keeps its DOM position and the transform transition fires.
+         Purely a visual overlay — hidden from assistive tech unconditionally;
+         the drawer's own Close button is the keyboard-accessible dismissal. --%>
     <div
       phx-click="close_drawer"
       class={[
         "fixed inset-0 bg-black/50 z-40 transition-opacity duration-200",
         if(@open, do: "opacity-100", else: "opacity-0 pointer-events-none")
       ]}
-      aria-hidden={!@open}
+      aria-hidden="true"
+      role="presentation"
     />
 
     <%!-- Drawer panel. `inert` removes the off-screen panel from focus and
