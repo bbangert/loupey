@@ -4,6 +4,7 @@ defmodule Loupey.Profiles do
   """
 
   import Ecto.Query
+  require Logger
 
   alias Loupey.Repo
   alias Loupey.Schemas.{Binding, Layout, Profile}
@@ -221,10 +222,23 @@ defmodule Loupey.Profiles do
     %Loupey.Bindings.Layout{name: layout.name, bindings: bindings}
   end
 
+  # A single broken binding must not take down the rest of the
+  # profile. `Binding.to_core/1` wraps its parse path in try/rescue
+  # and returns `{:error, _}` on any raise, so this flat_map drops
+  # the row and leaves siblings rendering. Logged loud so the user
+  # can find the offender; the editor LiveView surfaces parse errors
+  # via the changeset for write-time fixes.
   defp convert_binding(sb) do
     case Binding.to_core(sb) do
-      {:ok, b} -> [b]
-      _ -> []
+      {:ok, b} ->
+        [b]
+
+      {:error, reason} ->
+        Logger.warning(
+          "Skipping binding ##{sb.id} (control #{sb.control_id}): #{inspect(reason)}"
+        )
+
+        []
     end
   end
 

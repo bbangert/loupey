@@ -75,6 +75,39 @@ defmodule Loupey.Graphics.RendererTest do
     end
   end
 
+  describe "icon path resolution" do
+    test "string :icon path resolves through IconCache and renders" do
+      # Write a temp PNG via Vix so we don't depend on shipped icons.
+      tmp_path =
+        Path.join(System.tmp_dir!(), "renderer_icon_#{System.unique_integer([:positive])}.png")
+
+      :ok = Image.new!(8, 8, color: "#FF0000") |> Image.write!(tmp_path) |> then(fn _ -> :ok end)
+      on_exit(fn -> File.rm(tmp_path) end)
+
+      pixels =
+        Renderer.render_frame(%{background: "#000000", icon: tmp_path}, control(16, 16))
+
+      # Frame must render (no crash) and contain at least one red pixel
+      # from the icon — distinguishing this from a no-icon black frame.
+      assert byte_size(pixels) == 16 * 16 * 3
+      assert pixels =~ <<255, 0, 0>>
+    end
+
+    test "unresolvable string :icon path renders the frame without the icon" do
+      missing =
+        Path.join(
+          System.tmp_dir!(),
+          "definitely-not-here-#{System.unique_integer([:positive])}.png"
+        )
+
+      pixels =
+        Renderer.render_frame(%{background: "#000000", icon: missing}, control(8, 8))
+
+      # Doesn't crash; frame is just the background (all black).
+      assert pixels == :binary.copy(<<0, 0, 0>>, 8 * 8)
+    end
+  end
+
   describe "transform: rotate" do
     test "non-90 rotation produces a non-trivially-different frame" do
       # Asymmetric icon: half white, half black, so rotation visibly changes

@@ -44,8 +44,15 @@ defmodule Loupey.Animation.Ticker do
 
   defmodule InFlight do
     @moduledoc false
+    # `property_path` tags synthetic per-property transition flights
+    # installed by the Engine's diff dispatcher. nil for all other
+    # flight kinds (on_enter, on_change, continuous, event one-shots).
+    # Used by `cancel_property_transition/3` to drop a stale
+    # transition flight before installing its replacement, without
+    # touching coincidentally-overlapping on_change or on_enter
+    # one-shots.
     @enforce_keys [:keyframe, :started_at, :kind]
-    defstruct [:keyframe, :started_at, :kind]
+    defstruct [:keyframe, :started_at, :kind, :property_path]
   end
 
   defmodule ControlAnims do
@@ -104,13 +111,88 @@ defmodule Loupey.Animation.Ticker do
   end
 
   @doc """
-  Drop all in-flight animations for a control. Engine calls this on
-  rule transitions and layout switches. Async fire-and-forget — see
-  `start_animation/5` for the sync/async rationale.
+  Drop all in-flight animations for a control — including
+  `:event_one_shot` flights from input-rule animations. Engine calls
+  this on layout switches and profile reloads (hard resets where
+  every animation should die). For rule-transition cancellations
+  that should let touch animations finish, use
+  `cancel_rule_animations/2`.
   """
   @spec cancel_all(term(), Control.id()) :: :ok
   def cancel_all(device_id, control_id) do
     GenServer.cast(via_tuple(device_id), {:cancel_all, control_id})
+  end
+
+  @doc """
+  Drop only rule-bound flights (`:continuous`, `:one_shot`,
+  `:property_transition`), preserving `:event_one_shot` flights
+  installed by input-rule `animation:` blocks. Engine calls this on
+  output-rule transitions so a press-flash or touch-ripple already
+  in flight runs to completion against the new rule's resolved
+  state (paired with `refresh_base/3`) instead of cutting off
+  mid-animation when the underlying state changes.
+
+  If no event one-shots survive, the entire control entry is
+  dropped (matching the old `cancel_all` behavior for that case).
+  """
+  @spec cancel_rule_animations(term(), Control.id()) :: :ok
+  def cancel_rule_animations(device_id, control_id) do
+    GenServer.cast(via_tuple(device_id), {:cancel_rule_animations, control_id})
+  end
+
+  @doc """
+  Update the `base_instructions` for a control if any animation is
+  in flight. No-op when the control has no active animation.
+
+  Engine calls this on every output-rule re-resolve so that
+  in-flight animations (especially `:event_one_shot` flights from
+  input rules — captured at touch time and otherwise stale across
+  state changes) render their next frame against the current state.
+  """
+  @spec refresh_base(term(), Control.id(), map()) :: :ok
+  def refresh_base(device_id, control_id, base) when is_map(base) do
+    GenServer.cast(via_tuple(device_id), {:refresh_base, control_id, base})
+  end
+
+  @doc """
+  Install a synthetic per-property transition keyframe, tagged with
+  `path` so a later `cancel_property_transition/3` can drop it.
+
+  Functionally equivalent to `start_animation/5` with `kind:
+  :one_shot`, but tags the in-flight record with the property path
+  so re-fires (rapid same-property re-matches) cancel the prior
+  flight cleanly. Without the tag we'd have to either filter by
+  keyframe-stop content (collides with on_change) or stack flights
+  (snaps mid-tween from a stale start value).
+  """
+  @spec start_property_transition(
+          term(),
+          Control.id(),
+          Keyframes.t(),
+          map(),
+          [atom()]
+        ) :: :ok
+  def start_property_transition(device_id, control_id, %Keyframes{} = kf, base, path)
+      when is_list(path) and path != [] do
+    GenServer.cast(
+      via_tuple(device_id),
+      {:start_property_transition, control_id, kf, base, path}
+    )
+  end
+
+  @doc """
+  Cancel any in-flight per-property transition for `path` on
+  `control_id`. Engine calls this immediately before installing a
+  fresh transition so rapid same-property re-fires don't stack and
+  visually snap.
+
+  Only flights tagged with a matching `property_path` are dropped;
+  on_change and on_enter one-shots (which don't carry a path tag)
+  are left in flight. Async fire-and-forget.
+  """
+  @spec cancel_property_transition(term(), Control.id(), [atom()]) :: :ok
+  def cancel_property_transition(device_id, control_id, path) when is_list(path) do
+    GenServer.cast(via_tuple(device_id), {:cancel_property_transition, control_id, path})
   end
 
   @doc """
@@ -166,6 +248,60 @@ defmodule Loupey.Animation.Ticker do
     {:noreply, %{state | animations: Map.delete(state.animations, control_id)}}
   end
 
+  def handle_cast({:cancel_rule_animations, control_id}, state) do
+    case Map.get(state.animations, control_id) do
+      nil ->
+        {:noreply, state}
+
+      ctl ->
+        kept = Enum.filter(ctl.one_shots, &(&1.kind == :event_one_shot))
+
+        animations =
+          if kept == [] do
+            Map.delete(state.animations, control_id)
+          else
+            Map.put(state.animations, control_id, %{ctl | continuous: [], one_shots: kept})
+          end
+
+        {:noreply, %{state | animations: animations}}
+    end
+  end
+
+  def handle_cast({:refresh_base, control_id, base}, state) do
+    case Map.get(state.animations, control_id) do
+      nil ->
+        {:noreply, state}
+
+      ctl ->
+        animations =
+          Map.put(state.animations, control_id, %{ctl | base_instructions: base})
+
+        {:noreply, %{state | animations: animations}}
+    end
+  end
+
+  def handle_cast({:start_property_transition, control_id, kf, base, path}, state) do
+    was_idle = map_size(state.animations) == 0
+    state = install_animation(state, control_id, :one_shot, kf, base, property_path: path)
+
+    if was_idle and map_size(state.animations) > 0 do
+      schedule_tick(@tick_ms)
+    end
+
+    {:noreply, state}
+  end
+
+  def handle_cast({:cancel_property_transition, control_id, path}, state) do
+    case Map.get(state.animations, control_id) do
+      nil ->
+        {:noreply, state}
+
+      ctl ->
+        new_ctl = %{ctl | one_shots: Enum.reject(ctl.one_shots, &(&1.property_path == path))}
+        {:noreply, %{state | animations: Map.put(state.animations, control_id, new_ctl)}}
+    end
+  end
+
   @impl true
   def handle_call(:get_state, _from, state), do: {:reply, state, state}
 
@@ -196,7 +332,7 @@ defmodule Loupey.Animation.Ticker do
 
   ## Animation lifecycle
 
-  defp install_animation(state, control_id, kind, kf, base) do
+  defp install_animation(state, control_id, kind, kf, base, opts \\ []) do
     case Spec.find_control(state.spec, control_id) do
       nil ->
         Logger.debug("Ticker: no control #{inspect(control_id)} for #{inspect(state.device_id)}")
@@ -211,19 +347,20 @@ defmodule Loupey.Animation.Ticker do
         flight = %InFlight{
           keyframe: kf,
           started_at: System.monotonic_time(:millisecond),
-          kind: kind
+          kind: kind,
+          property_path: Keyword.get(opts, :property_path)
         }
 
-        existing = Map.get(state.animations, control_id)
-
         ctl =
-          if existing do
-            existing
-            |> add_flight(flight, kind)
-            |> Map.put(:base_instructions, base)
-          else
-            %ControlAnims{control: control, base_instructions: base}
-            |> add_flight(flight, kind)
+          case Map.get(state.animations, control_id) do
+            nil ->
+              %ControlAnims{control: control, base_instructions: base}
+              |> add_flight(flight, kind)
+
+            existing ->
+              existing
+              |> add_flight(flight, kind)
+              |> Map.put(:base_instructions, base)
           end
 
         %{state | animations: Map.put(state.animations, control_id, ctl)}

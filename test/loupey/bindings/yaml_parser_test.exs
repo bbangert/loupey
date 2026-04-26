@@ -1,7 +1,7 @@
 defmodule Loupey.Bindings.YamlParserTest do
   use ExUnit.Case, async: true
 
-  alias Loupey.Animation.Keyframes
+  alias Loupey.Animation.{Keyframes, TransitionSpec}
   alias Loupey.Bindings.YamlParser
 
   describe "parse_binding/1 — old single-action format (backward compat)" do
@@ -309,6 +309,235 @@ defmodule Loupey.Bindings.YamlParserTest do
     end
 
     defp all_atom_keys?(_), do: true
+
+    test "top-level transition parses to a path-keyed TransitionSpec map" do
+      yaml = """
+      output_rules:
+        - when: true
+          color: "#FFD700"
+          transitions:
+            color:
+              duration_ms: 300
+              easing: ease_out
+      """
+
+      assert {:ok, binding} = YamlParser.parse_binding(yaml)
+      [rule] = binding.output_rules
+
+      assert %{[:color] => %TransitionSpec{duration_ms: 300, easing: easing_fn}} =
+               rule.transitions
+
+      assert is_function(easing_fn, 1)
+    end
+
+    test "nested transition (fill.amount) flattens to a multi-segment path" do
+      yaml = """
+      output_rules:
+        - when: true
+          transitions:
+            fill:
+              amount:
+                duration_ms: 200
+                easing: ease_out
+      """
+
+      assert {:ok, binding} = YamlParser.parse_binding(yaml)
+      [rule] = binding.output_rules
+
+      assert %{[:fill, :amount] => %TransitionSpec{duration_ms: 200}} = rule.transitions
+    end
+
+    test "multiple transitions (top-level + nested) coexist" do
+      yaml = """
+      output_rules:
+        - when: true
+          transitions:
+            color:
+              duration_ms: 300
+            fill:
+              amount:
+                duration_ms: 200
+      """
+
+      assert {:ok, binding} = YamlParser.parse_binding(yaml)
+      [rule] = binding.output_rules
+
+      assert %{
+               [:color] => %TransitionSpec{duration_ms: 300},
+               [:fill, :amount] => %TransitionSpec{duration_ms: 200}
+             } = rule.transitions
+    end
+
+    test "transition: bare singular key is also accepted" do
+      yaml = """
+      output_rules:
+        - when: true
+          transition:
+            color:
+              duration_ms: 300
+      """
+
+      assert {:ok, binding} = YamlParser.parse_binding(yaml)
+      [rule] = binding.output_rules
+      assert %{[:color] => %TransitionSpec{duration_ms: 300}} = rule.transitions
+    end
+
+    test "ambiguous transition (duration_ms + sibling sub-path) raises" do
+      yaml = """
+      output_rules:
+        - when: true
+          transitions:
+            fill:
+              duration_ms: 100
+              amount:
+                duration_ms: 200
+      """
+
+      assert_raise ArgumentError, ~r/ambiguous transition spec at path \[:fill\]/, fn ->
+        YamlParser.parse_binding(yaml)
+      end
+    end
+
+    test "transition leaf with non-spec key raises (e.g. typo)" do
+      yaml = """
+      output_rules:
+        - when: true
+          transitions:
+            color:
+              duration_ms: 300
+              durationm: 400
+      """
+
+      assert_raise ArgumentError, ~r/ambiguous transition spec/, fn ->
+        YamlParser.parse_binding(yaml)
+      end
+    end
+
+    test "transition leaf missing duration_ms raises (no leaf reached)" do
+      yaml = """
+      output_rules:
+        - when: true
+          transitions:
+            color:
+              easing: ease_out
+      """
+
+      assert_raise ArgumentError,
+                   ~r/expected map at transition path \[:color, :easing\]/,
+                   fn -> YamlParser.parse_binding(yaml) end
+    end
+
+    test "top-level transitions :duration_ms with no property raises" do
+      yaml = """
+      output_rules:
+        - when: true
+          transitions:
+            duration_ms: 300
+      """
+
+      assert_raise ArgumentError, ~r/transitions: top-level :duration_ms/, fn ->
+        YamlParser.parse_binding(yaml)
+      end
+    end
+
+    test "on_change with nested path + inline keyframe parses to a Keyframes struct" do
+      yaml = """
+      output_rules:
+        - when: true
+          on_change:
+            fill:
+              amount:
+                duration_ms: 400
+                easing: ease_out
+                keyframes:
+                  0:
+                    overlay: "#FFFFFF80"
+                  100:
+                    overlay: "#FFFFFF00"
+      """
+
+      assert {:ok, binding} = YamlParser.parse_binding(yaml)
+      [rule] = binding.output_rules
+
+      assert %{[:fill, :amount] => %Keyframes{duration_ms: 400}} = rule.on_change
+    end
+
+    test "on_change with effect: ripple shorthand parses through Effects" do
+      yaml = """
+      output_rules:
+        - when: true
+          on_change:
+            fill:
+              amount:
+                effect: ripple
+                duration_ms: 400
+                color: "#FFFFFF"
+      """
+
+      assert {:ok, binding} = YamlParser.parse_binding(yaml)
+      [rule] = binding.output_rules
+      assert %{[:fill, :amount] => %Keyframes{duration_ms: 400}} = rule.on_change
+    end
+
+    test "on_change rejects string keyframe references" do
+      yaml = """
+      output_rules:
+        - when: true
+          on_change:
+            color: "ripple"
+      """
+
+      assert_raise ArgumentError,
+                   ~r/String keyframe references are not supported in on_change/,
+                   fn -> YamlParser.parse_binding(yaml) end
+    end
+
+    test "ambiguous on_change (duration_ms + sibling sub-path) raises" do
+      yaml = """
+      output_rules:
+        - when: true
+          on_change:
+            fill:
+              duration_ms: 400
+              keyframes:
+                0:
+                  overlay: "#FFFFFF80"
+              amount:
+                effect: ripple
+                duration_ms: 200
+      """
+
+      assert_raise ArgumentError, ~r/ambiguous on_change spec at path \[:fill\]/, fn ->
+        YamlParser.parse_binding(yaml)
+      end
+    end
+
+    test "transitions/on_change keys round-trip through atom whitelist (drift-guard)" do
+      yaml = """
+      output_rules:
+        - when: true
+          transitions:
+            color:
+              duration_ms: 300
+              easing: ease_out
+          on_change:
+            fill:
+              amount:
+                effect: ripple
+                duration_ms: 400
+      """
+
+      assert {:ok, binding} = YamlParser.parse_binding(yaml)
+      [rule] = binding.output_rules
+
+      assert Enum.all?(Map.keys(rule.transitions), fn path ->
+               Enum.all?(path, &is_atom/1)
+             end)
+
+      assert Enum.all?(Map.keys(rule.on_change), fn path ->
+               Enum.all?(path, &is_atom/1)
+             end)
+    end
 
     test "malformed inline keyframe (missing duration_ms) raises" do
       yaml = """

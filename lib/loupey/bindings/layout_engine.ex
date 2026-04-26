@@ -11,7 +11,7 @@ defmodule Loupey.Bindings.LayoutEngine do
   alias Hassock.EntityState
   alias Loupey.Bindings.{Expression, Layout, Profile, Rules}
   alias Loupey.Device.{Control, Spec}
-  alias Loupey.Graphics.{IconCache, Renderer}
+  alias Loupey.Graphics.Renderer
   alias Loupey.RenderCommands.{DrawBuffer, SetLED}
 
   @doc """
@@ -175,9 +175,6 @@ defmodule Loupey.Bindings.LayoutEngine do
 
   defp build_display_command(instructions, %Control{display: display} = control)
        when not is_nil(display) do
-    # Load icon if referenced by path
-    instructions = maybe_load_icon(instructions, display)
-
     pixels = Renderer.render_frame(instructions, control)
 
     %DrawBuffer{
@@ -200,18 +197,4 @@ defmodule Loupey.Bindings.LayoutEngine do
   end
 
   defp build_led_command(_instructions, _control), do: nil
-
-  defp maybe_load_icon(%{icon: path} = instructions, display) when is_binary(path) do
-    has_text = Map.has_key?(instructions, :text)
-    min_dim = min(display.width, display.height)
-    # Leave room for text label at the bottom when text is present
-    max_dim = if has_text, do: round(min_dim * 0.65), else: min_dim - 4
-
-    case IconCache.lookup(path, max_dim) do
-      {:ok, img} -> %{instructions | icon: img}
-      :error -> Map.delete(instructions, :icon)
-    end
-  end
-
-  defp maybe_load_icon(instructions, _display), do: instructions
 end

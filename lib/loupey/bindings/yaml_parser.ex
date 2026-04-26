@@ -45,7 +45,7 @@ defmodule Loupey.Bindings.YamlParser do
   ```
   """
 
-  alias Loupey.Animation.Keyframes
+  alias Loupey.Animation.{Keyframes, TransitionSpec}
   alias Loupey.Bindings.{Binding, InputRule, OutputRule}
 
   @doc """
@@ -200,18 +200,19 @@ defmodule Loupey.Bindings.YamlParser do
     condition = parse_condition(rule["when"])
     {animation_keys, rest} = pop_animation_keys(rule)
     instructions = Map.drop(rest, ["when"])
+    transitions_yaml = animation_keys["transitions"] || animation_keys["transition"]
 
     %OutputRule{
       when: condition,
       instructions: atomize_keys(instructions),
       animations: parse_animations(animation_keys, opts),
-      on_enter: parse_animation_list(animation_keys["on_enter"], opts)
+      on_enter: parse_animation_list(animation_keys["on_enter"], opts),
+      transitions: parse_transitions(transitions_yaml),
+      on_change: parse_on_change(animation_keys["on_change"], opts)
     }
   end
 
-  # Per-property `transitions` and `on_change` will be added back in
-  # v2 alongside the engine's resolved-instructions diff dispatcher.
-  @animation_keys ~w(animation animations on_enter)
+  @animation_keys ~w(animation animations on_enter transition transitions on_change)
 
   defp pop_animation_keys(rule) do
     Enum.reduce(@animation_keys, {%{}, rule}, fn key, {anim, rest} ->
@@ -250,6 +251,130 @@ defmodule Loupey.Bindings.YamlParser do
 
   defp parse_animation_value(map, _opts) when is_map(map) do
     map |> atomize_keys() |> Keyframes.parse()
+  end
+
+  # Walk a nested per-property `transitions` map, flattening to
+  # `%{[atom] => TransitionSpec.t()}` keyed by the engine's diff path
+  # representation. A leaf is detected by presence of `:duration_ms` —
+  # everything else at the same level is rejected as ambiguous (would
+  # otherwise silently land in the spec's unknown-keys check).
+  #
+  # Top-level `:duration_ms` (path == []) is also rejected — a
+  # transition without a property to animate is meaningless.
+  defp parse_transitions(nil), do: %{}
+
+  defp parse_transitions(map) when is_map(map) do
+    walk_transitions(atomize_keys(map), [])
+  end
+
+  defp walk_transitions(map, []) when is_map(map) and is_map_key(map, :duration_ms) do
+    raise ArgumentError,
+          "transitions: top-level :duration_ms has no property to animate — " <>
+            "wrap it under a property name (e.g. `transitions: { color: { duration_ms: 300 } }`)"
+  end
+
+  defp walk_transitions(map, path) when is_map(map) and is_map_key(map, :duration_ms) do
+    require_transition_leaf!(map, path)
+    %{Enum.reverse(path) => TransitionSpec.parse(map)}
+  end
+
+  defp walk_transitions(map, path) when is_map(map) do
+    walk_subpaths(map, path, &walk_transitions/2, "transition")
+  end
+
+  defp walk_subpaths(map, path, walker, label) do
+    Enum.reduce(map, %{}, fn {key, value}, acc ->
+      unless is_map(value) do
+        raise ArgumentError,
+              "expected map at #{label} path " <>
+                "#{inspect(Enum.reverse([key | path]))}, got #{inspect(value)}"
+      end
+
+      Map.merge(acc, walker.(value, [key | path]))
+    end)
+  end
+
+  # A transition leaf accepts only `:duration_ms` and `:easing`. Any
+  # other key at this level is treated as a sub-path the author meant
+  # to nest one level deeper — raise rather than swallow it as an
+  # unknown-keys error from `TransitionSpec.parse/1`.
+  defp require_transition_leaf!(map, path) do
+    extras = Map.keys(map) -- [:duration_ms, :easing]
+
+    unless extras == [] do
+      raise ArgumentError,
+            "ambiguous transition spec at path #{inspect(Enum.reverse(path))}: " <>
+              ":duration_ms is present (treated as leaf) but unrecognized keys " <>
+              "#{inspect(extras)} also appear. Transition leaves accept only " <>
+              ":duration_ms and :easing — move sub-paths up a level."
+    end
+  end
+
+  # Walk a nested per-property `on_change` map, flattening to
+  # `%{[atom] => Keyframes.t()}`. Leaf detection: presence of
+  # `:duration_ms` (inline keyframe) or `:effect` (effect shorthand).
+  # `:keyframes` is the only nested-map value allowed at a leaf level —
+  # any other nested map is flagged as a phantom path so authoring
+  # mistakes fail loud rather than silently land in `extras`.
+  #
+  # String keyframe references (e.g. `on_change: { color: "ripple" }`)
+  # are rejected for v2 — registry lookup at this level adds parser
+  # complexity for no current use case. Inline maps and effect
+  # shorthand cover authoring needs.
+  defp parse_on_change(nil, _opts), do: %{}
+
+  defp parse_on_change(map, opts) when is_map(map) do
+    walk_on_change(atomize_keys(map), [], opts)
+  end
+
+  defp walk_on_change(map, [], _opts)
+       when is_map(map) and (is_map_key(map, :duration_ms) or is_map_key(map, :effect)) do
+    raise ArgumentError,
+          "on_change: top-level keyframe has no property to react to — " <>
+            "wrap it under a property name (e.g. `on_change: { color: { effect: ripple } }`)"
+  end
+
+  defp walk_on_change(map, path, _opts)
+       when is_map(map) and (is_map_key(map, :duration_ms) or is_map_key(map, :effect)) do
+    require_on_change_leaf!(map, path)
+    %{Enum.reverse(path) => Keyframes.parse(map)}
+  end
+
+  defp walk_on_change(map, path, opts) when is_map(map) do
+    Enum.reduce(map, %{}, &recurse_on_change_entry(&1, &2, path, opts))
+  end
+
+  defp recurse_on_change_entry({key, value}, acc, path, opts) do
+    if is_map(value) do
+      Map.merge(acc, walk_on_change(value, [key | path], opts))
+    else
+      raise ArgumentError,
+            "on_change at path #{inspect(Enum.reverse([key | path]))}: " <>
+              "expected a nested map or leaf keyframe spec " <>
+              "(with :duration_ms or :effect), got #{inspect(value)}. " <>
+              "String keyframe references are not supported in on_change — " <>
+              "use an inline map or `effect:` shorthand."
+    end
+  end
+
+  # Allowed nested-map values at an on_change leaf. Only `:keyframes`
+  # is legitimately a map (the stops dict); anything else nested at
+  # this level is a phantom path and must be flagged.
+  @on_change_leaf_nested_keys [:keyframes]
+
+  defp require_on_change_leaf!(map, path) do
+    phantoms =
+      Enum.flat_map(map, fn {key, value} ->
+        if is_map(value) and key not in @on_change_leaf_nested_keys, do: [key], else: []
+      end)
+
+    unless phantoms == [] do
+      raise ArgumentError,
+            "ambiguous on_change spec at path #{inspect(Enum.reverse(path))}: " <>
+              "leaf marker (:duration_ms or :effect) is present but nested-map " <>
+              "keys #{inspect(phantoms)} look like sub-paths. Either remove the " <>
+              "leaf marker here or move sub-paths up a level."
+    end
   end
 
   defp parse_trigger("press"), do: :press
@@ -356,12 +481,13 @@ defmodule Loupey.Bindings.YamlParser do
     "linear" => :linear,
     "radial" => :radial,
 
-    # Animation hooks on rules. `transition` / `transitions` /
-    # `on_change` will be added back in v2 alongside the engine's
-    # diff-based per-property dispatcher.
+    # Animation hooks on rules.
     "animation" => :animation,
     "animations" => :animations,
     "on_enter" => :on_enter,
+    "transition" => :transition,
+    "transitions" => :transitions,
+    "on_change" => :on_change,
     "keyframes" => :keyframes,
     "overlay" => :overlay,
     "transform" => :transform,

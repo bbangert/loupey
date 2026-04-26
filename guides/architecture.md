@@ -187,10 +187,10 @@ Physical Device (display updates)
 The animation system layers a per-device tick loop on top of the
 existing render path. Bindings without animation hooks render
 through the direct path unchanged. Bindings *with*
-`animation`/`animations`/`on_enter` hooks (or input rules with
-`animation:` blocks) hand off to `Loupey.Animation.Ticker`, which
-owns the in-flight state and drives a 30 fps tick loop.
-`transitions`/`on_change` are not currently supported in YAML.
+`animation`/`animations`/`on_enter`/`transitions`/`on_change`
+hooks (or input rules with `animation:` blocks) hand off to
+`Loupey.Animation.Ticker`, which owns the in-flight state and
+drives a 30 fps tick loop.
 
 ```
 Bindings.Engine
@@ -223,10 +223,20 @@ render (on the next state change) re-renders the unanimated base.
 On layout switch or profile update, `cancel_all_animations` drops
 every Ticker animation for the device.
 
-v1 only fires rule-transition `on_enter` (one-shot) and continuous
-`animation`/`animations` (loop). Per-property `transitions` and
-`on_change` ship in v2 alongside the engine's resolved-instructions
-diff dispatcher.
+Same-rule re-match fires the per-property diff dispatcher: when a
+binding remains on the same matched output rule but the resolved
+instructions differ at a declared path, the Engine diffs the
+previous resolved instructions (carried in `last_match`'s third
+tuple element) against the new ones and dispatches one-shot
+keyframes for changed paths. `transitions` install synthetic
+two-stop keyframes that lerp the old → new value via
+`Tween.lerp_keyframe` (same primitives as continuous animations),
+tagged with `property_path` so a rapid re-fire cancels the prior
+flight cleanly. `on_change` installs the rule's declared keyframe
+verbatim. Rule-transition paths (`:no_match → match`, rule_idx
+change) skip the per-property dispatcher: those are `on_enter`'s
+job, and the cancel + install path drops every prior in-flight
+animation.
 
 The `IconCache` (`Loupey.Graphics.IconCache`) is essential for the
 animation pipeline: composite-heavy tick loops trip
