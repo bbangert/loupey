@@ -284,6 +284,8 @@ defmodule Loupey.Bindings.YamlParser do
 
   defp walk_subpaths(map, path, walker, label) do
     Enum.reduce(map, %{}, fn {key, value}, acc ->
+      validate_path_segment!(key, path, label)
+
       unless is_map(value) do
         raise ArgumentError,
               "expected map at #{label} path " <>
@@ -292,6 +294,23 @@ defmodule Loupey.Bindings.YamlParser do
 
       Map.merge(acc, walker.(value, [key | path]))
     end)
+  end
+
+  # Path segments must be atoms — `atomize_keys/1` only converts known
+  # YAML keys (those in `@atom_map`) and leaves anything else as a
+  # string. A typo'd property name (`colro:` instead of `color:`) would
+  # otherwise produce a path like `["colro"]` that `Engine.diff_paths/3`
+  # can never match against atom-keyed resolved instructions — silently
+  # making the whole `transitions:`/`on_change:` entry a no-op. Fail
+  # loud at parse time instead.
+  defp validate_path_segment!(key, _path, _label) when is_atom(key), do: :ok
+
+  defp validate_path_segment!(key, path, label) do
+    raise ArgumentError,
+          "unknown #{label} property #{inspect(key)} at path " <>
+            "#{inspect(Enum.reverse([key | path]))}. Property names must be in " <>
+            "Loupey.Bindings.YamlParser's atom whitelist (e.g. :color, :fill, " <>
+            ":amount). Check for a typo, or add the property to `@atom_map`."
   end
 
   # A transition leaf accepts only `:duration_ms` and `:easing`. Any
@@ -345,6 +364,8 @@ defmodule Loupey.Bindings.YamlParser do
   end
 
   defp recurse_on_change_entry({key, value}, acc, path, opts) do
+    validate_path_segment!(key, path, "on_change")
+
     if is_map(value) do
       Map.merge(acc, walk_on_change(value, [key | path], opts))
     else

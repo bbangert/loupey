@@ -243,7 +243,7 @@ Animations layer on top of rules — both input and output. They render through 
 | `transitions:` | Output rule | Same rule still matches but a declared property's resolved value changed | Smooth slider glide, color tween |
 | `on_change:` | Output rule | Same condition as `transitions:`, but fires a one-shot keyframe instead of a tween | Ripple overlay on brightness change |
 
-`transitions:` and `on_change:` only fire on **same-rule re-matches**. When the matched rule changes (e.g. `state == "on"` → `state == "off"`), the engine cancels everything via the rule-transition path and re-installs `animation:`/`on_enter:` for the new rule.
+`transitions:` and `on_change:` only fire on **same-rule re-matches**. When the matched rule changes (e.g. `state == "on"` → `state == "off"`), the rule-transition path cancels the previous matched output rule's `animation:`/`animations:`, `on_enter:`, `transitions:`, and `on_change:`, then installs `animation:`/`on_enter:` for the new rule. In-flight input-rule one-shot animations (for example touch/press feedback) may continue.
 
 ### Effect catalog
 

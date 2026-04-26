@@ -235,8 +235,9 @@ tagged with `property_path` so a rapid re-fire cancels the prior
 flight cleanly. `on_change` installs the rule's declared keyframe
 verbatim. Rule-transition paths (`:no_match → match`, rule_idx
 change) skip the per-property dispatcher: those are `on_enter`'s
-job, and the cancel + install path drops every prior in-flight
-animation.
+job, and the cancel + install path cancels prior rule-bound
+flights while preserving `:event_one_shot` animations such as
+touch/press feedback.
 
 The `IconCache` (`Loupey.Graphics.IconCache`) is essential for the
 animation pipeline: composite-heavy tick loops trip

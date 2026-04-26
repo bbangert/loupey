@@ -413,6 +413,55 @@ defmodule Loupey.Bindings.YamlParserTest do
       end
     end
 
+    test "transition with unknown property name (typo) raises" do
+      # `colro` isn't in @atom_map, so atomize_keys leaves it as the
+      # string "colro". Without the path-segment guard this would
+      # silently produce a `[\"colro\"]` path that the engine could
+      # never match against atom-keyed instructions — the transition
+      # would just never fire. Better to fail loud at parse time.
+      yaml = """
+      output_rules:
+        - when: true
+          transitions:
+            colro:
+              duration_ms: 300
+      """
+
+      assert_raise ArgumentError, ~r/unknown transition property "colro"/, fn ->
+        YamlParser.parse_binding(yaml)
+      end
+    end
+
+    test "transition with unknown nested property name raises" do
+      yaml = """
+      output_rules:
+        - when: true
+          transitions:
+            fill:
+              amont:
+                duration_ms: 200
+      """
+
+      assert_raise ArgumentError, ~r/unknown transition property "amont"/, fn ->
+        YamlParser.parse_binding(yaml)
+      end
+    end
+
+    test "on_change with unknown property name (typo) raises" do
+      yaml = """
+      output_rules:
+        - when: true
+          on_change:
+            colro:
+              effect: ripple
+              duration_ms: 200
+      """
+
+      assert_raise ArgumentError, ~r/unknown on_change property "colro"/, fn ->
+        YamlParser.parse_binding(yaml)
+      end
+    end
+
     test "transition leaf missing duration_ms raises (no leaf reached)" do
       yaml = """
       output_rules:

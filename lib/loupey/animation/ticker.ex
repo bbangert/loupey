@@ -124,13 +124,14 @@ defmodule Loupey.Animation.Ticker do
   end
 
   @doc """
-  Drop only rule-bound flights (`:continuous`, `:one_shot`,
-  `:property_transition`), preserving `:event_one_shot` flights
-  installed by input-rule `animation:` blocks. Engine calls this on
-  output-rule transitions so a press-flash or touch-ripple already
-  in flight runs to completion against the new rule's resolved
-  state (paired with `refresh_base/3`) instead of cutting off
-  mid-animation when the underlying state changes.
+  Drop only rule-bound flights (`:continuous` and rule-bound
+  `:one_shot` flights, including property transitions tagged with
+  `property_path`), preserving `:event_one_shot` flights installed
+  by input-rule `animation:` blocks. Engine calls this on output-rule
+  transitions so a press-flash or touch-ripple already in flight runs
+  to completion against the new rule's resolved state (paired with
+  `refresh_base/3`) instead of cutting off mid-animation when the
+  underlying state changes.
 
   If no event one-shots survive, the entire control entry is
   dropped (matching the old `cancel_all` behavior for that case).

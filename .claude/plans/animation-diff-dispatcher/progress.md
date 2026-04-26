@@ -187,3 +187,9 @@ mix dialyzer                  # passes
 [22:55] Modified: /var/home/ben/Programming/elixir/loupy/lib/loupey/bindings/engine.ex
 [22:56] Modified: /var/home/ben/Programming/elixir/loupy/test/loupey/animation/ticker_test.exs
 [22:57] Modified: /var/home/ben/Programming/elixir/loupy/test/loupey/bindings/engine_animation_test.exs
+[07:26] Modified: /var/home/ben/Programming/elixir/loupy/lib/loupey/animation/ticker.ex
+[07:26] Modified: /var/home/ben/Programming/elixir/loupy/guides/binding-editor.md
+[07:26] Modified: /var/home/ben/Programming/elixir/loupy/guides/architecture.md
+[07:26] Modified: /var/home/ben/Programming/elixir/loupy/lib/loupey/bindings/yaml_parser.ex
+[07:26] Modified: /var/home/ben/Programming/elixir/loupy/lib/loupey/bindings/yaml_parser.ex
+[07:28] Modified: /var/home/ben/Programming/elixir/loupy/test/loupey/bindings/yaml_parser_test.exs
