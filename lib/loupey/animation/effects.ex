@@ -30,10 +30,10 @@ defmodule Loupey.Animation.Effects do
   """
   @spec from_map(atom() | String.t(), opts()) :: t()
   def from_map(effect, opts) when is_binary(effect) do
-    from_map(String.to_existing_atom(effect), opts)
-  rescue
-    ArgumentError ->
-      raise ArgumentError, "unknown effect #{inspect(effect)}"
+    case safe_existing_atom(effect) do
+      {:ok, atom} -> from_map(atom, opts)
+      :error -> raise ArgumentError, "unknown effect #{inspect(effect)}"
+    end
   end
 
   def from_map(:pulse, opts), do: pulse(opts)
@@ -45,6 +45,16 @@ defmodule Loupey.Animation.Effects do
 
   def from_map(other, _opts) do
     raise ArgumentError, "unknown effect #{inspect(other)}"
+  end
+
+  # Wrap `String.to_existing_atom/1` in a tagged tuple so the rescue
+  # block doesn't re-raise (which would trip credo's reraise check) —
+  # we want to surface a custom "unknown effect" message, not the
+  # generic `ArgumentError` from atom resolution.
+  defp safe_existing_atom(str) do
+    {:ok, String.to_existing_atom(str)}
+  rescue
+    ArgumentError -> :error
   end
 
   @doc """

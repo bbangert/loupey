@@ -1,6 +1,7 @@
 defmodule Loupey.Bindings.YamlParserTest do
   use ExUnit.Case, async: true
 
+  alias Loupey.Animation.Keyframes
   alias Loupey.Bindings.YamlParser
 
   describe "parse_binding/1 — old single-action format (backward compat)" do
@@ -217,7 +218,7 @@ defmodule Loupey.Bindings.YamlParserTest do
 
     test "on_enter list with mixed string-references and inline maps" do
       shake =
-        Loupey.Animation.Keyframes.parse(%{
+        Keyframes.parse(%{
           duration_ms: 200,
           keyframes: %{0 => %{}, 100 => %{}}
         })
@@ -248,7 +249,7 @@ defmodule Loupey.Bindings.YamlParserTest do
       """
 
       breathe =
-        Loupey.Animation.Keyframes.parse(%{
+        Keyframes.parse(%{
           duration_ms: 1000,
           iterations: :infinite,
           keyframes: %{0 => %{}, 100 => %{}}

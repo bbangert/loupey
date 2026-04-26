@@ -318,16 +318,21 @@ defmodule Loupey.Bindings.Engine do
   # the dispatch logic with a real Ticker but without booting the full
   # Engine GenServer / DeviceServer stack.
   def dispatch_animations_for_entity(layout, entity_id, state) do
-    Enum.reduce(layout.bindings, state, fn {control_id, control_bindings}, acc ->
-      Enum.with_index(control_bindings)
-      |> Enum.reduce(acc, fn {binding, idx}, acc2 ->
-        if binding_references_entity?(binding, entity_id) do
-          dispatch_binding(binding, idx, control_id, acc2)
-        else
-          acc2
-        end
-      end)
-    end)
+    Enum.reduce(layout.bindings, state, &dispatch_control(&1, entity_id, &2))
+  end
+
+  defp dispatch_control({control_id, control_bindings}, entity_id, state) do
+    control_bindings
+    |> Enum.with_index()
+    |> Enum.reduce(state, &maybe_dispatch_binding(&1, entity_id, control_id, &2))
+  end
+
+  defp maybe_dispatch_binding({binding, idx}, entity_id, control_id, state) do
+    if binding_references_entity?(binding, entity_id) do
+      dispatch_binding(binding, idx, control_id, state)
+    else
+      state
+    end
   end
 
   defp binding_references_entity?(binding, entity_id) do

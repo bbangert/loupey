@@ -286,7 +286,7 @@ defmodule Loupey.Bindings.EngineAnimationTest do
       # production the Orchestrator restarts it via the DynamicSupervisor;
       # in this isolated test we restart manually.
       {:ok, new_pid} =
-        Loupey.Animation.Ticker.start_link(
+        Ticker.start_link(
           device_id: device_id,
           spec: state.spec,
           render_target: {:test, self()}

@@ -28,21 +28,19 @@ defmodule Loupey.Animation.CubicBezier do
   end
 
   defp solve_parametric_t(target_x, x1, x2) do
-    Enum.reduce_while(1..@iterations, target_x, fn _, guess ->
-      current_x = bezier(guess, x1, x2) - target_x
-
-      if abs(current_x) < @epsilon do
-        {:halt, guess}
-      else
-        slope = bezier_slope(guess, x1, x2)
-
-        if abs(slope) < @epsilon do
-          {:halt, guess}
-        else
-          {:cont, guess - current_x / slope}
-        end
-      end
+    Enum.reduce_while(1..@iterations, target_x, fn _i, guess ->
+      newton_step(guess, x1, x2, target_x)
     end)
+  end
+
+  defp newton_step(guess, x1, x2, target_x) do
+    current_x = bezier(guess, x1, x2) - target_x
+
+    cond do
+      abs(current_x) < @epsilon -> {:halt, guess}
+      abs(bezier_slope(guess, x1, x2)) < @epsilon -> {:halt, guess}
+      true -> {:cont, guess - current_x / bezier_slope(guess, x1, x2)}
+    end
   end
 
   defp bezier(t, p1, p2) do

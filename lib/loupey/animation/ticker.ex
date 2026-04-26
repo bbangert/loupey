@@ -56,6 +56,13 @@ defmodule Loupey.Animation.Ticker do
 
   defmodule State do
     @moduledoc false
+    @type t :: %__MODULE__{
+            device_id: term(),
+            spec: Loupey.Device.Spec.t(),
+            last_tick: integer(),
+            render_target: term(),
+            animations: map()
+          }
     @enforce_keys [:device_id, :spec, :last_tick, :render_target]
     defstruct [:device_id, :spec, :last_tick, :render_target, animations: %{}]
   end

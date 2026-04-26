@@ -143,18 +143,16 @@ defmodule Loupey.Animation.Tween do
     sorted = Enum.sort_by(stops, &elem(&1, 0))
     {lower_pct, lower_map, upper_pct, upper_map} = surrounding(sorted, progress * 100.0)
 
-    cond do
-      lower_pct == upper_pct ->
-        lower_map
+    if lower_pct == upper_pct do
+      lower_map
+    else
+      local_t = (progress * 100.0 - lower_pct) / (upper_pct - lower_pct)
 
-      true ->
-        local_t = (progress * 100.0 - lower_pct) / (upper_pct - lower_pct)
-
-        Map.new(Map.keys(Map.merge(lower_map, upper_map)), fn key ->
-          lower_val = Map.get(lower_map, key)
-          upper_val = Map.get(upper_map, key)
-          {key, lerp_value(lower_val, upper_val, local_t)}
-        end)
+      Map.new(Map.keys(Map.merge(lower_map, upper_map)), fn key ->
+        lower_val = Map.get(lower_map, key)
+        upper_val = Map.get(upper_map, key)
+        {key, lerp_value(lower_val, upper_val, local_t)}
+      end)
     end
   end
 

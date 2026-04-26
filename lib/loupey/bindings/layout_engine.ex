@@ -11,7 +11,7 @@ defmodule Loupey.Bindings.LayoutEngine do
   alias Hassock.EntityState
   alias Loupey.Bindings.{Expression, Layout, Profile, Rules}
   alias Loupey.Device.{Control, Spec}
-  alias Loupey.Graphics.Renderer
+  alias Loupey.Graphics.{IconCache, Renderer}
   alias Loupey.RenderCommands.{DrawBuffer, SetLED}
 
   @doc """
@@ -200,7 +200,7 @@ defmodule Loupey.Bindings.LayoutEngine do
     # Leave room for text label at the bottom when text is present
     max_dim = if has_text, do: round(min_dim * 0.65), else: min_dim - 4
 
-    case Loupey.Graphics.IconCache.lookup(path, max_dim) do
+    case IconCache.lookup(path, max_dim) do
       {:ok, img} -> %{instructions | icon: img}
       :error -> Map.delete(instructions, :icon)
     end

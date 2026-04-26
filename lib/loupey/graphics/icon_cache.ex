@@ -23,6 +23,8 @@ defmodule Loupey.Graphics.IconCache do
 
   use GenServer
 
+  alias Vix.Vips.Image, as: VipsImage
+
   @table :loupey_icon_cache
 
   ## Public API
@@ -76,7 +78,7 @@ defmodule Loupey.Graphics.IconCache do
 
   defp load_and_store({path, max_dim} = key) do
     with {:ok, lazy} <- safe_thumbnail(path, max_dim),
-         {:ok, materialized} <- Vix.Vips.Image.copy_memory(lazy) do
+         {:ok, materialized} <- VipsImage.copy_memory(lazy) do
       :ets.insert(@table, {key, materialized})
       {:ok, materialized}
     else
