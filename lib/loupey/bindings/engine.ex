@@ -250,8 +250,10 @@ defmodule Loupey.Bindings.Engine do
       control = Spec.find_control(state.spec, control_id)
       bindings = Map.get(layout.bindings, control_id, [])
 
-      Enum.reduce(bindings, state, fn binding, acc ->
-        process_binding_input(binding, event, acc, control)
+      bindings
+      |> Enum.with_index()
+      |> Enum.reduce(state, fn {binding, idx}, acc ->
+        process_binding_input(binding, idx, event, acc, control)
       end)
     else
       state
@@ -266,14 +268,14 @@ defmodule Loupey.Bindings.Engine do
 
   defp maybe_flush_pending_touch(_event, state), do: state
 
-  defp process_binding_input(binding, event, state, control) do
+  defp process_binding_input(binding, binding_idx, event, state, control) do
     # For backward compat: if binding has entity_id, pass its state
     entity_state =
       if binding.entity_id, do: Map.get(state.entity_states, binding.entity_id)
 
     case Rules.match_input(event, binding, entity_state, control) do
       {:actions, rule, action_list} ->
-        fire_input_animations(state, event, rule)
+        fire_input_animations(state, binding, binding_idx, event, rule)
         Enum.reduce(action_list, state, &execute_action(&1, event, &2))
 
       :no_match ->
@@ -282,15 +284,15 @@ defmodule Loupey.Bindings.Engine do
   end
 
   # Input-rule animations fire as event one-shots on the touched
-  # control — e.g. press flash on touch_start. The Ticker's own
-  # `call_if_running/2` gate handles the no-Ticker case, so this
-  # is safe to call eagerly. We use `:event_one_shot` to distinguish
+  # control — e.g. press flash on touch_start. The Ticker's public
+  # API is `cast/2`, so a missing/dead Ticker is a silent no-op —
+  # safe to call eagerly. We use `:event_one_shot` to distinguish
   # from output-rule on_enter for future stats / debug.
-  defp fire_input_animations(_state, _event, %InputRule{animations: []}), do: :ok
+  defp fire_input_animations(_state, _binding, _idx, _event, %InputRule{animations: []}), do: :ok
 
-  defp fire_input_animations(state, event, %InputRule{animations: kfs}) do
+  defp fire_input_animations(state, binding, binding_idx, event, %InputRule{animations: kfs}) do
     control_id = event_control_id(event)
-    base = base_for_input_animation(state, control_id)
+    base = base_for_input_animation(state, binding, binding_idx)
 
     Enum.each(kfs, fn kf ->
       Ticker.start_animation(state.device_id, control_id, :event_one_shot, kf, base)
@@ -298,27 +300,16 @@ defmodule Loupey.Bindings.Engine do
   end
 
   # The Ticker needs a base layer to render the animation over —
-  # use whatever the most-recent matched output rule produced. If
-  # nothing matches (rare; most bindings have at least an
-  # unconditional fallback), use an empty map and rely on the
-  # animation frames to provide overlay-style values.
-  defp base_for_input_animation(state, control_id) do
-    case Map.get(state.last_match, {control_id, 0}) do
-      {:matched, _rule_idx} ->
-        layout = get_active_layout(state)
+  # resolve from THIS binding (the one whose input rule fired), at
+  # its actual `binding_idx`. Falls back to `%{}` if the binding
+  # itself doesn't currently match an output rule, which is rare
+  # since most bindings ship a `when: true` fallback.
+  defp base_for_input_animation(state, binding, _binding_idx) do
+    entity_state = if binding.entity_id, do: Map.get(state.entity_states, binding.entity_id)
 
-        with %{} <- layout,
-             [binding | _] <- Map.get(layout.bindings, control_id, []),
-             entity_state =
-               if(binding.entity_id, do: Map.get(state.entity_states, binding.entity_id)),
-             {:match, _, _, instructions} <- Rules.match_output(binding, entity_state) do
-          instructions
-        else
-          _ -> %{}
-        end
-
-      _ ->
-        %{}
+    case Rules.match_output(binding, entity_state) do
+      {:match, _, _, instructions} -> instructions
+      :no_match -> %{}
     end
   end
 
@@ -438,6 +429,18 @@ defmodule Loupey.Bindings.Engine do
     apply_match_transition(state.device_id, control_id, prev, match)
     %{state | last_match: Map.put(state.last_match, key, match_summary(match))}
   end
+
+  # Only track matches against rules that actually have animation
+  # hooks. A non-animated rule transitioning to/from any other state
+  # has no Ticker work to do, and tracking it would let `cancel_all`
+  # fire when leaving a non-animated rule — which would wipe
+  # animations installed by *other bindings* on the same control
+  # (cross-binding interference). Mapping non-animated matches to
+  # `:no_match` keeps them invisible to the dispatch state machine.
+  defp match_summary(
+         {:match, _rule_idx, %OutputRule{animations: [], on_enter: []}, _instructions}
+       ),
+       do: :no_match
 
   defp match_summary({:match, rule_idx, _rule, _instructions}), do: {:matched, rule_idx}
   defp match_summary(:no_match), do: :no_match

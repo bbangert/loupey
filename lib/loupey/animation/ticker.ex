@@ -83,6 +83,13 @@ defmodule Loupey.Animation.Ticker do
   while installed) or `:one_shot` / `:event_one_shot` (auto-removes
   on completion). `base` is the resolved instructions to render under
   the animation's per-frame overlay.
+
+  Async fire-and-forget. `cast/2` to a missing/dead Ticker is a
+  silent no-op, which is exactly what we want for a non-essential
+  subsystem — animation failures must never propagate up into the
+  Engine. Tests that need to observe Ticker state immediately after
+  this call should use `get_state/1` as a barrier (synchronous reply
+  flushes prior casts in mailbox order).
   """
   @spec start_animation(
           term(),
@@ -93,33 +100,24 @@ defmodule Loupey.Animation.Ticker do
         ) :: :ok
   def start_animation(device_id, control_id, kind, %Keyframes{} = kf, base)
       when kind in [:continuous, :one_shot, :event_one_shot] do
-    call_if_running(device_id, {:start_animation, control_id, kind, kf, base})
+    GenServer.cast(via_tuple(device_id), {:start_animation, control_id, kind, kf, base})
   end
 
   @doc """
   Drop all in-flight animations for a control. Engine calls this on
-  rule transitions and layout switches.
+  rule transitions and layout switches. Async fire-and-forget — see
+  `start_animation/5` for the sync/async rationale.
   """
   @spec cancel_all(term(), Control.id()) :: :ok
   def cancel_all(device_id, control_id) do
-    call_if_running(device_id, {:cancel_all, control_id})
-  end
-
-  # Public-API gate — the Ticker is non-essential, so callers should
-  # never crash when no Ticker is registered (startup race, post-crash
-  # window before re-attach, or a device with the Animation supervisor
-  # disabled). Direct `GenServer.call(via_tuple(...), ...)` would exit
-  # the caller with `:noproc` in those cases.
-  defp call_if_running(device_id, message) do
-    case Registry.lookup(Loupey.DeviceRegistry, {:ticker, device_id}) do
-      [{pid, _}] -> GenServer.call(pid, message)
-      [] -> :ok
-    end
+    GenServer.cast(via_tuple(device_id), {:cancel_all, control_id})
   end
 
   @doc """
   Inspect current animation state — used by tests and `/phx:audit`-style
-  introspection. Not part of the hot path.
+  introspection. Not part of the hot path. Synchronous, so it doubles
+  as a mailbox barrier for tests that need to observe state changes
+  applied by prior `cast/2` messages.
   """
   @spec get_state(term()) :: State.t()
   def get_state(device_id) do
@@ -153,7 +151,7 @@ defmodule Loupey.Animation.Ticker do
   end
 
   @impl true
-  def handle_call({:start_animation, control_id, kind, kf, base}, _from, state) do
+  def handle_cast({:start_animation, control_id, kind, kf, base}, state) do
     was_idle = map_size(state.animations) == 0
     state = install_animation(state, control_id, kind, kf, base)
 
@@ -161,13 +159,14 @@ defmodule Loupey.Animation.Ticker do
       schedule_tick(@tick_ms)
     end
 
-    {:reply, :ok, state}
+    {:noreply, state}
   end
 
-  def handle_call({:cancel_all, control_id}, _from, state) do
-    {:reply, :ok, %{state | animations: Map.delete(state.animations, control_id)}}
+  def handle_cast({:cancel_all, control_id}, state) do
+    {:noreply, %{state | animations: Map.delete(state.animations, control_id)}}
   end
 
+  @impl true
   def handle_call(:get_state, _from, state), do: {:reply, state, state}
 
   @impl true
