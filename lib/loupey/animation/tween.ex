@@ -133,6 +133,12 @@ defmodule Loupey.Animation.Tween do
   Properties present in only one stop are passed through unchanged at
   that stop boundary.
 
+  **Precondition: `stops` MUST be sorted ascending by `stop_pct`.**
+  `Loupey.Animation.Keyframes.parse/1` guarantees this for every
+  `%Keyframes{}.stops` field, which is the only production caller.
+  Skipping the per-call `Enum.sort_by` here saves an allocation
+  per-frame per-animation in the tick loop hot path.
+
   Numeric values lerp via `lerp_number/3`; `"#RRGGBB"` strings lerp via
   `lerp_rgb/3` and are returned as `{r, g, b}` tuples; everything else
   steps (takes the lower stop's value until exactly at the upper stop).
@@ -140,8 +146,7 @@ defmodule Loupey.Animation.Tween do
   @spec lerp_keyframe([{number(), map()}], float()) :: map()
   def lerp_keyframe(stops, progress) do
     progress = clamp01(progress)
-    sorted = Enum.sort_by(stops, &elem(&1, 0))
-    {lower_pct, lower_map, upper_pct, upper_map} = surrounding(sorted, progress * 100.0)
+    {lower_pct, lower_map, upper_pct, upper_map} = surrounding(stops, progress * 100.0)
 
     if lower_pct == upper_pct do
       lower_map

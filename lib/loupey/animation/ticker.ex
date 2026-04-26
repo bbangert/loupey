@@ -138,14 +138,15 @@ defmodule Loupey.Animation.Ticker do
     spec = Keyword.fetch!(opts, :spec)
     render_target = Keyword.get(opts, :render_target, :device_server)
 
-    now = System.monotonic_time(:millisecond)
-    schedule_tick(@tick_ms)
-
+    # Don't schedule a tick on init — idle devices spend most of
+    # their time with no animations installed, so 30 fps wakeups
+    # would burn CPU for nothing. Ticks start when the first
+    # animation lands; they stop when the last one completes.
     {:ok,
      %State{
        device_id: device_id,
        spec: spec,
-       last_tick: now,
+       last_tick: System.monotonic_time(:millisecond),
        render_target: render_target,
        animations: %{}
      }}
@@ -153,7 +154,14 @@ defmodule Loupey.Animation.Ticker do
 
   @impl true
   def handle_call({:start_animation, control_id, kind, kf, base}, _from, state) do
-    {:reply, :ok, install_animation(state, control_id, kind, kf, base)}
+    was_idle = map_size(state.animations) == 0
+    state = install_animation(state, control_id, kind, kf, base)
+
+    if was_idle and map_size(state.animations) > 0 do
+      schedule_tick(@tick_ms)
+    end
+
+    {:reply, :ok, state}
   end
 
   def handle_call({:cancel_all, control_id}, _from, state) do
@@ -167,13 +175,20 @@ defmodule Loupey.Animation.Ticker do
     now = System.monotonic_time(:millisecond)
     state = run_tick(state, now)
 
-    # Monotonic-time-corrected scheduling: aim for `last_tick + @tick_ms * 2`
-    # as the next firing, clamped so we never flood (`>= 1 ms`) and never
-    # sleep longer than one tick (`<= @tick_ms`). Drift accumulates over
-    # one tick max — explicit no-backfill matches CSS semantics.
-    elapsed = now - state.last_tick
-    next_delay = max(1, min(@tick_ms, @tick_ms * 2 - elapsed))
-    schedule_tick(next_delay)
+    # Only reschedule when there's still work to do. If the last
+    # animation just completed/cancelled, the tick loop pauses;
+    # the next `start_animation/5` will restart it.
+    #
+    # Monotonic-time-corrected scheduling: aim for `last_tick +
+    # @tick_ms * 2` as the next firing, clamped so we never flood
+    # (`>= 1 ms`) and never sleep longer than one tick (`<= @tick_ms`).
+    # Drift accumulates over one tick max — explicit no-backfill
+    # matches CSS semantics.
+    if map_size(state.animations) > 0 do
+      elapsed = now - state.last_tick
+      next_delay = max(1, min(@tick_ms, @tick_ms * 2 - elapsed))
+      schedule_tick(next_delay)
+    end
 
     {:noreply, %{state | last_tick: now}}
   end

@@ -166,6 +166,15 @@ defmodule Loupey.Bindings.Engine do
 
   def handle_info(_msg, state), do: {:noreply, state}
 
+  # Short-circuit when a monitor is already attached. Without this,
+  # if the initial registry lookup misses, multiple
+  # `Process.send_after/3` retries can be queued — and a `:DOWN`
+  # path also schedules one. Once the Ticker comes up, each queued
+  # message would call `Process.monitor/1` again, leaking refs.
+  defp attach_ticker_monitor(%State{ticker_monitor: ref} = state) when not is_nil(ref) do
+    state
+  end
+
   defp attach_ticker_monitor(state) do
     case Registry.lookup(Loupey.DeviceRegistry, {:ticker, state.device_id}) do
       [{pid, _}] ->
@@ -190,6 +199,12 @@ defmodule Loupey.Bindings.Engine do
     # doesn't accumulate stale entries across repeated edits.
     Evaluator.clear_cache()
 
+    # Cancel every Ticker animation owned by this device — bindings
+    # the user just removed should not keep animating, and bindings
+    # that survived will be re-installed by
+    # `dispatch_animations_for_active_layout/1` below.
+    cancel_all_animations(state)
+
     # Diff old vs new entity ids: subscribe to added, unsubscribe from
     # removed, keep state for overlapping. Previously this unconditionally
     # merged a fresh subscribe_and_fetch onto the existing map — leaking
@@ -208,13 +223,17 @@ defmodule Loupey.Bindings.Engine do
     kept_states = Map.take(state.entity_states, MapSet.to_list(kept))
     entity_states = Map.merge(kept_states, added_states)
 
-    state = %{state | profile: profile, entity_states: entity_states}
+    # Clearing `last_match` is what makes the Ticker re-install
+    # animations on the next dispatch — without this, the old
+    # last_match would short-circuit same-rule re-installs.
+    state = %{state | profile: profile, entity_states: entity_states, last_match: %{}}
 
     # Clear all controls first to remove stale content from deleted bindings
     clear_commands = LayoutEngine.clear_all(state.spec)
     send_commands(state.device_id, clear_commands, state.spec)
 
     render_active_layout(state)
+    state = dispatch_animations_for_active_layout(state)
     {:noreply, state}
   end
 

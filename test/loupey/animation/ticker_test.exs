@@ -75,6 +75,33 @@ defmodule Loupey.Animation.TickerTest do
       # delivered when sleep returns.
       refute_receive {:ticker_render, _}, 100
     end
+
+    test "tick loop is idle until first animation; resumes on install; pauses on cancel" do
+      control_id = {:key, 0}
+      {device_id, pid} = start_ticker_for_test(control_id)
+
+      # No `:tick` message in the mailbox after init — the loop is
+      # not scheduled until an animation lands.
+      assert mailbox_count(pid) == 0
+
+      kf = simple_keyframe(duration_ms: 200, iterations: :infinite)
+      :ok = Ticker.start_animation(device_id, control_id, :continuous, kf, %{})
+      Process.sleep(120)
+      assert_received {:ticker_render, _}
+
+      :ok = Ticker.cancel_all(device_id, control_id)
+      # Drain anything still in flight from the just-completed tick.
+      _ = drain_render_messages(50)
+
+      # After cancel the loop pauses: nothing should arrive over a
+      # 100 ms window where 3+ ticks would otherwise have fired.
+      refute_receive {:ticker_render, _}, 100
+    end
+  end
+
+  defp mailbox_count(pid) do
+    {:messages, msgs} = Process.info(pid, :messages)
+    Enum.count(msgs, &match?(:tick, &1))
   end
 
   describe "start_animation/5 — continuous" do

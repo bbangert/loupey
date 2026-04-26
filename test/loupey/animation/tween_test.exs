@@ -1,7 +1,7 @@
 defmodule Loupey.Animation.TweenTest do
   use ExUnit.Case, async: true
 
-  alias Loupey.Animation.Tween
+  alias Loupey.Animation.{Keyframes, Tween}
 
   describe "iteration_and_progress/3" do
     test "before-start returns iter 0, progress 0" do
@@ -180,9 +180,20 @@ defmodule Loupey.Animation.TweenTest do
       assert Tween.lerp_keyframe(stops, 0.1) == %{amount: 0.5}
     end
 
-    test "unsorted input is sorted" do
-      stops = [{100, %{amount: 1.0}}, {0, %{amount: 0.0}}]
-      assert Tween.lerp_keyframe(stops, 0.5) == %{amount: 0.5}
+    test "Keyframes.parse normalizes stops to ascending order" do
+      # Hot-path contract: lerp_keyframe assumes pre-sorted stops.
+      # `Keyframes.parse/1` is the production caller and guarantees
+      # the invariant — this test pins that contract so it survives
+      # any refactor that rebuilds keyframe stops.
+      kf =
+        Keyframes.parse(%{
+          duration_ms: 1000,
+          keyframes: %{100 => %{amount: 1.0}, 0 => %{amount: 0.0}}
+        })
+
+      pcts = Enum.map(kf.stops, &elem(&1, 0))
+      assert pcts == Enum.sort(pcts)
+      assert Tween.lerp_keyframe(kf.stops, 0.5) == %{amount: 0.5}
     end
   end
 end
