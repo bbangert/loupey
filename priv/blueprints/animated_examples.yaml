@@ -1,12 +1,11 @@
 name: "Animated Examples"
-description: "Motivating cases for the v1 CSS-style animation layer.
+description: "Motivating cases for the CSS-style animation layer.
 
   - Breathing glow on an idle light (continuous animation overlay).
   - Press flash on touch_start (input-rule one-shot).
   - Shake when a sensor's state becomes 'triggered' (on_enter).
-
-  Per-property `transitions` and `on_change` ship in v2 once the
-  engine's resolved-instructions diff dispatcher lands.
+  - Color tween + ripple overlay on brightness changes
+    (per-property `transitions` + `on_change` via the diff dispatcher).
 
   Smoke-tested via `Loupey.Profiles.import_yaml!/1`."
 inputs:
@@ -14,7 +13,12 @@ inputs:
     type: entity
     description: "The entity to animate against"
 output_rules:
-  # Idle breathing glow.
+  # Idle breathing glow + per-property dispatchers:
+  #   - `transitions.color` tweens the icon-target color over 300 ms
+  #     when the rule re-resolves to a different hue.
+  #   - `on_change.fill.amount` fires a ripple overlay one-shot when
+  #     brightness changes — the rule still matches but the resolved
+  #     value at the path differs.
   - when: 'state == "on"'
     background: "#000000"
     fill:
@@ -32,6 +36,21 @@ output_rules:
           overlay: "#FFD70000"
         100:
           overlay: "#FFD70044"
+    transitions:
+      color:
+        duration_ms: 300
+        easing: ease_out
+      fill:
+        amount:
+          duration_ms: 200
+          easing: ease_out
+    on_change:
+      fill:
+        amount:
+          effect: ripple
+          duration_ms: 400
+          easing: ease_out
+          color: "#FFFFFF"
 
   # Shake the icon on the "triggered" state entry.
   - when: 'state == "triggered"'

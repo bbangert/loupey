@@ -14,7 +14,7 @@ defmodule Loupey.Bindings.Engine do
   require Logger
 
   alias Hassock.ServiceCall
-  alias Loupey.Animation.Ticker
+  alias Loupey.Animation.{Keyframes, Ticker}
   alias Loupey.Bindings.{Expression, InputRule, LayoutEngine, OutputRule, Profile, Rules}
   alias Loupey.Bindings.Expression.Evaluator
   alias Loupey.Device.{Control, Spec}
@@ -27,9 +27,14 @@ defmodule Loupey.Bindings.Engine do
   defmodule State do
     @moduledoc false
     # `last_match` tracks the most recent output-rule match for each
-    # `{control_id, binding_idx}`. Shape: `{:matched, rule_idx} | :no_match`.
-    # The Engine uses it to detect rule transitions and decide when to
-    # cancel/install Ticker animations vs. rely on the direct render path.
+    # `{control_id, binding_idx}`. Shape:
+    # `{:matched, rule_idx, instructions} | :no_match`. The Engine
+    # uses it to detect rule transitions (cancel/install animations)
+    # and to diff the resolved instructions against the next match
+    # for per-property `transitions` and `on_change` dispatch.
+    # Non-animated rules (no animations / on_enter / transitions /
+    # on_change) collapse to `:no_match` so non-animated rules don't
+    # stomp animations installed by other bindings on the same control.
     #
     # `ticker_monitor` is the monitor reference for the per-device
     # Ticker process. On `{:DOWN, ...}` the Engine clears `last_match`
@@ -426,6 +431,21 @@ defmodule Loupey.Bindings.Engine do
     key = {control_id, binding_idx}
     prev = Map.get(state.last_match, key, :no_match)
 
+    # Refresh the Ticker's base_instructions for any in-flight
+    # animation BEFORE the rule-transition logic runs. Input-rule
+    # `:event_one_shot` flights (touch flash, ripple) capture their
+    # base at trigger time and would otherwise render against stale
+    # state across an HA-driven re-render — visually: the icon stays
+    # on the old state until the next state change. Ticker no-ops
+    # if no animation is installed for the control.
+    case match do
+      {:match, _, _, instructions} ->
+        Ticker.refresh_base(state.device_id, control_id, instructions)
+
+      :no_match ->
+        :ok
+    end
+
     apply_match_transition(state.device_id, control_id, prev, match)
     %{state | last_match: Map.put(state.last_match, key, match_summary(match))}
   end
@@ -437,18 +457,41 @@ defmodule Loupey.Bindings.Engine do
   # animations installed by *other bindings* on the same control
   # (cross-binding interference). Mapping non-animated matches to
   # `:no_match` keeps them invisible to the dispatch state machine.
-  defp match_summary(
-         {:match, _rule_idx, %OutputRule{animations: [], on_enter: []}, _instructions}
-       ),
-       do: :no_match
+  #
+  # Animated rules (any of animations / on_enter / transitions /
+  # on_change populated) carry the resolved instructions in the
+  # third tuple element so the next dispatch can diff them for
+  # per-property `transitions` / `on_change` hooks.
+  defp match_summary({:match, rule_idx, %OutputRule{} = rule, instructions}) do
+    if rule_animated?(rule) do
+      {:matched, rule_idx, instructions}
+    else
+      :no_match
+    end
+  end
 
-  defp match_summary({:match, rule_idx, _rule, _instructions}), do: {:matched, rule_idx}
   defp match_summary(:no_match), do: :no_match
+
+  # `rule_has_no_same_idx_work` covers the three hooks that fire on
+  # same-rule re-matches (continuous animations, transitions,
+  # on_change). `on_enter` is deliberately excluded: it fires only on
+  # rule entry, so a rule whose only hook is `on_enter` has nothing
+  # to do on same-idx — but its match still needs tracking so the
+  # cancel-and-install path can fire it on the next entry. That's why
+  # `rule_animated?/1` ORs `on_enter` on top of the same-idx guard.
+  defguardp rule_has_no_same_idx_work(rule)
+            when rule.animations == [] and
+                   map_size(rule.transitions) == 0 and
+                   map_size(rule.on_change) == 0
+
+  defp rule_animated?(%OutputRule{} = rule) do
+    rule.on_enter != [] or not rule_has_no_same_idx_work(rule)
+  end
 
   defp apply_match_transition(_device_id, _control_id, :no_match, :no_match), do: :ok
 
-  defp apply_match_transition(device_id, control_id, {:matched, _}, :no_match) do
-    Ticker.cancel_all(device_id, control_id)
+  defp apply_match_transition(device_id, control_id, {:matched, _, _}, :no_match) do
+    Ticker.cancel_rule_animations(device_id, control_id)
   end
 
   defp apply_match_transition(
@@ -463,39 +506,136 @@ defmodule Loupey.Bindings.Engine do
   defp apply_match_transition(
          device_id,
          control_id,
-         {:matched, prev_idx},
+         {:matched, prev_idx, _prev_instructions},
          {:match, idx, rule, instructions}
        )
        when prev_idx != idx do
-    Ticker.cancel_all(device_id, control_id)
+    Ticker.cancel_rule_animations(device_id, control_id)
     install_rule_animations(device_id, control_id, rule, instructions)
   end
 
   # Same rule, same idx — animation install happened on the prior
-  # transition. But the resolved `instructions` may have changed
-  # (template-driven text/fill amount values), and the Ticker is
-  # holding stale `base_instructions` from when the animation was
-  # first installed. Re-install continuous keyframes: the W4 dedup
-  # in `Ticker.add_flight/3` keeps `started_at` stable so the loop
-  # doesn't restart, but the install path replaces `base_instructions`
-  # with the new resolved value. `on_enter` is *not* re-fired —
-  # that's still gated by rule transitions.
+  # transition. Skip via the shared `rule_has_no_same_idx_work` guard
+  # so the predicate can't drift from `rule_animated?/1`'s definition.
   defp apply_match_transition(
          _device_id,
          _control_id,
-         {:matched, _},
-         {:match, _, %OutputRule{animations: []}, _}
-       ),
+         {:matched, _, _},
+         {:match, _, rule, _}
+       )
+       when rule_has_no_same_idx_work(rule),
        do: :ok
 
+  # Same rule, same idx — refresh continuous (the Ticker's stale
+  # `base_instructions` get replaced with the new resolved values via
+  # the install path's W4 dedup, which keeps `started_at` stable so
+  # the continuous loop doesn't restart) and fire per-property
+  # transitions / on_change keyframes for any property whose resolved
+  # value changed.
   defp apply_match_transition(
          device_id,
          control_id,
-         {:matched, _},
+         {:matched, _, prev_instructions},
          {:match, _, rule, instructions}
        ) do
     refresh_continuous(device_id, control_id, rule, instructions)
+    fire_property_diff_hooks(device_id, control_id, rule, prev_instructions, instructions)
   end
+
+  # No-op fast path — no transitions or on_change paths to walk.
+  defp fire_property_diff_hooks(
+         _device_id,
+         _control_id,
+         %OutputRule{transitions: t, on_change: c},
+         _prev,
+         _curr
+       )
+       when map_size(t) == 0 and map_size(c) == 0,
+       do: :ok
+
+  defp fire_property_diff_hooks(device_id, control_id, rule, prev, curr) do
+    paths = MapSet.new(Map.keys(rule.transitions) ++ Map.keys(rule.on_change))
+    diffs = diff_paths(prev, curr, paths)
+    install_property_transitions(device_id, control_id, rule, curr, diffs)
+    install_property_on_change(device_id, control_id, rule, curr, diffs)
+  end
+
+  # Returns `[{path, old_val, new_val}, ...]` for declared paths
+  # whose value changed. `get_in/2` returns nil for missing keys,
+  # which collapses "property absent" and "property is nil" into the
+  # same case — that's correct: `nil → nil` is not a change.
+  defp diff_paths(prev, curr, paths) do
+    Enum.flat_map(paths, fn path ->
+      old = get_in(prev, path)
+      new = get_in(curr, path)
+      if old == new, do: [], else: [{path, old, new}]
+    end)
+  end
+
+  defp install_property_transitions(device_id, control_id, rule, base, diffs) do
+    Enum.each(diffs, fn {path, old, new} ->
+      case Map.get(rule.transitions, path) do
+        # Path declared transitionable but wasn't in the diff for this
+        # entry, or no transition declared for this path.
+        nil ->
+          :ok
+
+        # CSS semantics: no transition on first paint. on_change still
+        # fires — the property *did* change, we just have no value to
+        # lerp from.
+        _spec when is_nil(old) ->
+          :ok
+
+        # val → nil (property disappears) installs a flight, but
+        # `Tween.lerp_value(a, nil, _)` falls through to `a`, so the
+        # rendered value holds at the old value for the duration. This
+        # matches "no useful interpolation target" without a special
+        # case — pinned by the `val → nil holds the old value` test.
+        spec ->
+          install_transition_flight(device_id, control_id, base, path, old, new, spec)
+      end
+    end)
+  end
+
+  defp install_transition_flight(device_id, control_id, base, path, old, new, spec) do
+    kf = %Keyframes{
+      stops: [{0, nest(path, old)}, {100, nest(path, new)}],
+      duration_ms: spec.duration_ms,
+      easing: spec.easing,
+      iterations: 1,
+      direction: :normal,
+      target: nil,
+      name: nil,
+      extras: %{}
+    }
+
+    # Drop any in-flight transition for this path before installing
+    # the replacement. Without this, a re-fire mid-tween would stack
+    # two flights — the new flight's 0%-stop is the prior *resolved*
+    # value, not the currently-rendered (mid-lerp) value, so the
+    # render snaps. on_change and on_enter one-shots are tagged
+    # `property_path: nil` and survive the cancel.
+    Ticker.cancel_property_transition(device_id, control_id, path)
+    Ticker.start_property_transition(device_id, control_id, kf, base, path)
+  end
+
+  defp install_property_on_change(device_id, control_id, rule, base, diffs) do
+    Enum.each(diffs, fn {path, _old, _new} ->
+      case Map.get(rule.on_change, path) do
+        nil -> :ok
+        kf -> Ticker.start_animation(device_id, control_id, :one_shot, kf, base)
+      end
+    end)
+  end
+
+  # Build a nested map at the given path with `value` as the leaf.
+  # `nest([:fill, :amount], 73)` → `%{fill: %{amount: 73}}`. The
+  # synthetic transition keyframe's stops nest the lerped value at
+  # this path so `Tween.lerp_keyframe` (via `Map.merge` recursion in
+  # `lerp_value`) interpolates only the targeted leaf, leaving
+  # sibling properties in `base` untouched on the merged frame.
+  defp nest([key], value), do: %{key => value}
+  defp nest([key | rest], value), do: %{key => nest(rest, value)}
 
   defp refresh_continuous(device_id, control_id, %OutputRule{} = rule, instructions) do
     Enum.each(rule.animations, fn kf ->

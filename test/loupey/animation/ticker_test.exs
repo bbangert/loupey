@@ -156,6 +156,97 @@ defmodule Loupey.Animation.TickerTest do
 
       assert %{animations: %{}} = Ticker.get_state(device_id)
     end
+
+    test "cancel_all also drops :event_one_shot flights (hard reset)" do
+      control_id = {:key, 0}
+      {device_id, _pid} = start_ticker_for_test(control_id)
+
+      kf = simple_keyframe(duration_ms: 5_000, iterations: 1)
+      :ok = Ticker.start_animation(device_id, control_id, :event_one_shot, kf, %{})
+
+      :ok = Ticker.cancel_all(device_id, control_id)
+
+      assert %{animations: %{}} = Ticker.get_state(device_id)
+    end
+  end
+
+  describe "cancel_rule_animations/2" do
+    test "drops :continuous flights but preserves :event_one_shot flights" do
+      control_id = {:key, 0}
+      {device_id, _pid} = start_ticker_for_test(control_id)
+
+      cont_kf = simple_keyframe(duration_ms: 5_000, iterations: :infinite)
+      touch_kf = simple_keyframe(duration_ms: 200, iterations: 1)
+
+      :ok = Ticker.start_animation(device_id, control_id, :continuous, cont_kf, %{})
+      :ok = Ticker.start_animation(device_id, control_id, :event_one_shot, touch_kf, %{})
+
+      :ok = Ticker.cancel_rule_animations(device_id, control_id)
+
+      ctl = Ticker.get_state(device_id).animations[control_id]
+      assert ctl.continuous == [], "continuous flight should be dropped"
+      assert [event_flight] = ctl.one_shots
+      assert event_flight.kind == :event_one_shot
+    end
+
+    test "drops :one_shot (on_enter / on_change) flights" do
+      control_id = {:key, 0}
+      {device_id, _pid} = start_ticker_for_test(control_id)
+
+      kf = simple_keyframe(duration_ms: 5_000, iterations: 1)
+      :ok = Ticker.start_animation(device_id, control_id, :one_shot, kf, %{})
+
+      :ok = Ticker.cancel_rule_animations(device_id, control_id)
+
+      assert %{animations: %{}} = Ticker.get_state(device_id),
+             "rule-bound :one_shot should be dropped along with the empty entry"
+    end
+
+    test "drops :property_transition flights (synthetic transitions tagged with path)" do
+      control_id = {:key, 0}
+      {device_id, _pid} = start_ticker_for_test(control_id)
+
+      kf = simple_keyframe(duration_ms: 5_000, iterations: 1)
+      :ok = Ticker.start_property_transition(device_id, control_id, kf, %{}, [:fill, :amount])
+
+      :ok = Ticker.cancel_rule_animations(device_id, control_id)
+
+      assert %{animations: %{}} = Ticker.get_state(device_id)
+    end
+
+    test "no-op when control has no animations installed" do
+      control_id = {:key, 0}
+      {device_id, _pid} = start_ticker_for_test(control_id)
+
+      :ok = Ticker.cancel_rule_animations(device_id, control_id)
+
+      assert %{animations: %{}} = Ticker.get_state(device_id)
+    end
+  end
+
+  describe "refresh_base/3" do
+    test "updates base_instructions for an active animation" do
+      control_id = {:key, 0}
+      {device_id, _pid} = start_ticker_for_test(control_id)
+
+      kf = simple_keyframe(duration_ms: 5_000, iterations: 1)
+      :ok = Ticker.start_animation(device_id, control_id, :event_one_shot, kf, %{icon: "old.png"})
+
+      :ok = Ticker.refresh_base(device_id, control_id, %{icon: "new.png"})
+
+      assert %{icon: "new.png"} =
+               Ticker.get_state(device_id).animations[control_id].base_instructions
+    end
+
+    test "no-op when control has no animations installed" do
+      control_id = {:key, 0}
+      {device_id, _pid} = start_ticker_for_test(control_id)
+
+      :ok = Ticker.refresh_base(device_id, control_id, %{icon: "new.png"})
+
+      # Doesn't crash, doesn't create a phantom animation entry.
+      assert %{animations: %{}} = Ticker.get_state(device_id)
+    end
   end
 
   describe "tick cadence" do

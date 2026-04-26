@@ -229,6 +229,209 @@ Use `\n` for line breaks in text content.
 
 ---
 
+## Animations
+
+Animations layer on top of rules — both input and output. They render through a 30 fps tick loop while in flight and clean up automatically when complete. Authors usually write the `effect:` shorthand; longhand `keyframes:` blocks are available for custom animations.
+
+### Hook reference
+
+| Hook | Where | Fires when | Typical use |
+|------|-------|------------|-------------|
+| `animation:` | Input rule | On the event (`touch_start`, `press`, …) | Touch flash, press squish |
+| `animation:` / `animations:` | Output rule | While the rule is matched (loops) | Breathing glow, pulsing alert |
+| `on_enter:` | Output rule | The instant the rule becomes the matched rule | Shake on alert state |
+| `transitions:` | Output rule | Same rule still matches but a declared property's resolved value changed | Smooth slider glide, color tween |
+| `on_change:` | Output rule | Same condition as `transitions:`, but fires a one-shot keyframe instead of a tween | Ripple overlay on brightness change |
+
+`transitions:` and `on_change:` only fire on **same-rule re-matches**. When the matched rule changes (e.g. `state == "on"` → `state == "off"`), the rule-transition path cancels the previous matched output rule's `animation:`/`animations:`, `on_enter:`, `transitions:`, and `on_change:`, then installs `animation:`/`on_enter:` for the new rule. In-flight input-rule one-shot animations (for example touch/press feedback) may continue.
+
+### Effect catalog
+
+The `effect:` shorthand picks a built-in animation; override the defaults via the same map.
+
+| Effect | Behavior | Default duration | Default iterations | Effect-specific options |
+|--------|----------|-----------------:|-------------------:|-------------------------|
+| `pulse` | Translucent overlay opacity oscillation | 1200 ms | `infinite` (alternate) | `color` (default `"#FFFFFF"`), `intensity` (0–255, default 64) |
+| `flash` | Bright overlay → fade transparent | 250 ms | 1 | `color`, `intensity` (default 200) |
+| `ripple` | Overlay pulse fading to transparent | 400 ms | 1 | `color`, `intensity` (default 128) |
+| `shake` | Horizontal icon translate oscillation | 300 ms | 1 | `amplitude` (default 4 px) |
+| `wiggle` | Icon rotation oscillation | 400 ms | 1 | `angle` (default 8°) |
+| `squish` | Icon scale-down bounce | 200 ms | 1 | `min_scale` (default 0.92) |
+
+All effects also accept the universal options `duration_ms`, `easing`, and `iterations`. `direction` is overridable on `pulse` only (the others hardcode their motion direction).
+
+### Easing curves
+
+| Name | Behavior |
+|------|----------|
+| `linear` | Constant speed |
+| `ease` | Smooth in and out |
+| `ease_in` | Slow start, fast end |
+| `ease_out` | Fast start, slow end (good for transitions to a settled state) |
+| `ease_in_out` | Slow start and end |
+| `step_start` | Jumps to the end value immediately |
+| `step_end` | Holds the start value until the end |
+
+### Patterns
+
+#### Touch flash on touch_start
+
+```yaml
+input_rules:
+  - on: touch_start
+    action: call_service
+    domain: light
+    service: toggle
+    target: "light.office"
+    animation:
+      effect: flash
+      duration_ms: 200
+      color: "#FFFFFF"
+      intensity: 200
+```
+
+`flash` and `ripple` are single-shot by default. To use `pulse` for touch feedback, override `iterations: 2` (one fade in + one fade out) — its default of `infinite` is for continuous output-rule glows.
+
+#### Pulsing alert while a state is active
+
+```yaml
+output_rules:
+  - when: state == "unlocked"
+    background: "#FF1B1B"
+    text: { content: "UNLOCKED", color: "#FFFFFF", valign: middle }
+    animation:
+      effect: pulse
+      color: "#FFFFFF"
+      intensity: 80
+      duration_ms: 1000
+  - when: state == "locked"
+    background: "#0AF019"
+    text: { content: "LOCKED", color: "#111111", valign: middle }
+```
+
+The locked rule has no `animation:`, so the engine cleanly cancels the pulse when the lock engages and reinstalls it on unlock.
+
+#### Smooth slider glide on brightness change
+
+`transitions:` tweens a property when the rule re-resolves with a different value at that path. Authors write nested YAML; the engine flattens internally to a property-path map.
+
+```yaml
+output_rules:
+  - when: state == "on"
+    background: "#0a0a0a"
+    fill:
+      amount: '{{ (attributes["brightness"] || 0) / 255 * 100 }}'
+      direction: to_top
+      color: "#FFD700"
+    transitions:
+      fill:
+        amount:
+          duration_ms: 200
+          easing: ease_out
+```
+
+Tuning: 100–150 ms for "responsive", 200–300 ms for "smooth", 400+ ms feels laggy on actively-dragged sliders.
+
+#### Ripple on a property change
+
+`on_change:` fires a one-shot keyframe when a specific property changes — useful for visual confirmation independent of the property's own rendering.
+
+```yaml
+output_rules:
+  - when: state == "on"
+    background: "#000000"
+    fill:
+      amount: '{{ (attributes["brightness"] || 0) / 255 * 100 }}'
+      direction: to_top
+      color: "#FFD700"
+    on_change:
+      fill:
+        amount:
+          effect: ripple
+          duration_ms: 400
+          color: "#FFFFFF"
+```
+
+`transitions:` and `on_change:` can target the same property — the tween glides the value while the ripple overlays.
+
+#### Shake on entering a triggered state
+
+`on_enter:` is a list of one-shots fired when the rule first becomes the matched rule.
+
+```yaml
+output_rules:
+  - when: state == "triggered"
+    background: "#330000"
+    icon: "icons/neon_blue/Alerts.png"
+    on_enter:
+      - effect: shake
+        duration_ms: 350
+        amplitude: 5
+  - when: true
+    background: "#000000"
+    icon: "icons/neon_blue/Alerts_Quiet.png"
+```
+
+### Inline keyframes (longhand)
+
+When a built-in effect doesn't fit, write a custom keyframe block. The longhand form takes a `keyframes:` map keyed by stop percentages (0–100):
+
+```yaml
+animation:
+  duration_ms: 1500
+  easing: ease_in_out
+  iterations: infinite
+  direction: alternate
+  keyframes:
+    0:
+      overlay: "#FFFFFF00"
+    50:
+      overlay: "#FFFFFF40"
+    100:
+      overlay: "#FFFFFF00"
+```
+
+Stops can target the same instruction shape as the rule itself — `overlay`, `fill`, `transform`, etc. The renderer interpolates numbers and hex colors automatically.
+
+To animate icon translation, rotation, or scale, use `transform:` in keyframe stops with `target: icon` (or `target: text`):
+
+```yaml
+on_enter:
+  - duration_ms: 400
+    target: icon
+    keyframes:
+      0:
+        transform: { rotate: -10 }
+      100:
+        transform: { rotate: 0 }
+```
+
+### Authoring gotchas
+
+- **Quote your colors.** YAML treats `#` as a comment marker. `color: #ffffff` parses as `color: nil` and rejects at save time. Always write `color: "#ffffff"`.
+- **`pulse` defaults to `infinite` iterations.** Override `iterations:` (e.g. `2`) when using it as a touch one-shot, or use `flash`/`ripple` instead.
+- **`transitions:` skips on first paint.** A property appearing for the first time (`nil → val`) renders the new value instantly; subsequent changes tween. This matches CSS semantics.
+- **String-valued properties don't tween.** Text content like `"50%"` → `"55%"` updates instantly; the tween primitive can't interpolate strings. Numbers and hex colors do tween.
+- **`transitions:` doesn't fire on rule changes.** Only same-rule re-matches with a changed value at a declared path. Cross-rule changes go through the cancel-and-install path, which fires `on_enter:` (not `transitions:`).
+- **Leaf detection in `transitions:` / `on_change:`.** `:duration_ms` (and `:effect` for `on_change`) marks a leaf spec. Mixing a leaf marker with sibling sub-paths at the same level raises a parse-time error so the ambiguity surfaces immediately:
+
+  ```yaml
+  # Wrong — :duration_ms makes [:fill] a leaf, but :amount looks like a sub-path
+  transitions:
+    fill:
+      duration_ms: 200
+      amount: { duration_ms: 100 }
+
+  # Right — pick one nesting level
+  transitions:
+    fill:
+      amount:
+        duration_ms: 200
+        easing: ease_out
+  ```
+
+---
+
 ## Expressions
 
 Expressions are Elixir code snippets used in `when:` conditions and `{{ }}` templates.

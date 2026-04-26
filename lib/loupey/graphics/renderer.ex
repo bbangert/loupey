@@ -16,7 +16,9 @@ defmodule Loupey.Graphics.Renderer do
 
   Render instructions are a map with optional keys:
   - `:background` — `"#RRGGBB"` solid color (default: `"#000000"`)
-  - `:icon` — `Vix.Vips.Image.t()` already loaded icon image
+  - `:icon` — either a `Vix.Vips.Image.t()` (already-materialized image)
+    or a `String.t()` path resolved through `IconCache` at render time.
+    Unresolvable paths drop the icon silently.
   - `:fill` — `%{amount: 0..100, direction: :to_top | :to_bottom | :to_left | :to_right, color: "#RRGGBB"}`
   - `:text` — text rendering, either a simple string or a map with:
     - `:content` — the text string (required)
@@ -39,7 +41,7 @@ defmodule Loupey.Graphics.Renderer do
   """
 
   alias Loupey.Device.Control
-  alias Loupey.Graphics.Format
+  alias Loupey.Graphics.{Format, IconCache}
   alias Vix.Vips.Operation
 
   @doc """
@@ -52,6 +54,7 @@ defmodule Loupey.Graphics.Renderer do
     width = display.width
     height = display.height
 
+    instructions = maybe_load_icon(instructions, display)
     background_color = Map.get(instructions, :background, "#000000")
 
     {image, instructions} =
@@ -65,6 +68,38 @@ defmodule Loupey.Graphics.Renderer do
     |> Image.flatten!()
     |> Format.to_device_format(display.pixel_format)
   end
+
+  # Icon resolution — turn a string path into a thumbnailed Vix image
+  # via the cache. Already-materialized `%Vix.Vips.Image{}` values pass
+  # through. Unresolvable paths drop the `:icon` key so downstream
+  # `apply_icon/4` skips compositing rather than crashing.
+  #
+  # Lives here (rather than per-caller) so both the direct render path
+  # (LayoutEngine) and the per-tick animation path (Ticker) get
+  # consistent behavior — and so adding a new render entry-point
+  # doesn't have to remember to call it.
+  defp maybe_load_icon(%{icon: path} = instructions, display) when is_binary(path) do
+    has_text = Map.has_key?(instructions, :text)
+    min_dim = min(display.width, display.height)
+    # Leave room for text label at the bottom when text is present.
+    max_dim = if has_text, do: round(min_dim * 0.65), else: min_dim - 4
+
+    # `IconCache.lookup/2`'s guard requires `max_dim > 0` — a degenerate
+    # display (or one nearly entirely consumed by a text label) would
+    # otherwise crash the render path. Drop the icon entirely when
+    # there's no usable space; a 1px thumbnail wouldn't render
+    # meaningfully anyway.
+    if max_dim > 0 do
+      case IconCache.lookup(path, max_dim) do
+        {:ok, img} -> %{instructions | icon: img}
+        :error -> Map.delete(instructions, :icon)
+      end
+    else
+      Map.delete(instructions, :icon)
+    end
+  end
+
+  defp maybe_load_icon(instructions, _display), do: instructions
 
   @doc """
   Render a solid color fill for a display control.
