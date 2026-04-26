@@ -30,16 +30,27 @@ defmodule Loupey.Bindings.Engine do
     # `{control_id, binding_idx}`. Shape: `{:matched, rule_idx} | :no_match`.
     # The Engine uses it to detect rule transitions and decide when to
     # cancel/install Ticker animations vs. rely on the direct render path.
+    #
+    # `ticker_monitor` is the monitor reference for the per-device
+    # Ticker process. On `{:DOWN, ...}` the Engine clears `last_match`
+    # so the next state-change re-installs animations against the
+    # restarted Ticker (which boots with empty animation state).
     defstruct [
       :device_id,
       :spec,
       :profile,
+      :ticker_monitor,
       entity_states: %{},
       last_match: %{},
       last_touch_move_at: 0,
       pending_touch_move: nil
     ]
   end
+
+  # Retry interval for finding a freshly-started Ticker pid in the
+  # registry. The Orchestrator starts the Ticker right after the Engine,
+  # but there's a small race window during boot (and on Ticker restart).
+  @ticker_monitor_retry_ms 50
 
   # -- Public API --
 
@@ -90,6 +101,13 @@ defmodule Loupey.Bindings.Engine do
     # settle.
     send(self(), {:init_state, initial_profile})
 
+    # The Orchestrator starts the Ticker right after this Engine. We
+    # can't `Process.monitor/1` it here — the registry entry isn't
+    # there yet — so schedule a retry loop. `setup_ticker_monitor`
+    # also re-fires after a `{:DOWN, ...}` to re-attach to the
+    # restarted Ticker.
+    send(self(), :setup_ticker_monitor)
+
     state = %State{
       device_id: device_id,
       spec: spec,
@@ -132,7 +150,32 @@ defmodule Loupey.Bindings.Engine do
     {:noreply, state}
   end
 
+  # Ticker monitor — re-attach on every restart. Clears `last_match` so
+  # the next dispatch sees the world as "no animations installed" and
+  # re-installs them, rather than landing on the same-rule-same-idx no-op
+  # against a Ticker that just lost its state.
+  def handle_info(:setup_ticker_monitor, state) do
+    {:noreply, attach_ticker_monitor(state)}
+  end
+
+  def handle_info({:DOWN, ref, :process, _pid, _reason}, %State{ticker_monitor: ref} = state) do
+    Process.send_after(self(), :setup_ticker_monitor, @ticker_monitor_retry_ms)
+    {:noreply, %{state | ticker_monitor: nil, last_match: %{}}}
+  end
+
   def handle_info(_msg, state), do: {:noreply, state}
+
+  defp attach_ticker_monitor(state) do
+    case Registry.lookup(Loupey.DeviceRegistry, {:ticker, state.device_id}) do
+      [{pid, _}] ->
+        ref = Process.monitor(pid)
+        %{state | ticker_monitor: ref}
+
+      [] ->
+        Process.send_after(self(), :setup_ticker_monitor, @ticker_monitor_retry_ms)
+        state
+    end
+  end
 
   @impl true
   def handle_cast({:switch_layout, layout_id}, state) do

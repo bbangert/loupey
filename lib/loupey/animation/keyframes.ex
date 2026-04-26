@@ -60,6 +60,7 @@ defmodule Loupey.Animation.Keyframes do
   ]
 
   @valid_directions [:normal, :reverse, :alternate, :alternate_reverse]
+  @valid_targets [:icon, :text, nil]
 
   @doc """
   Parse a map (already atom-keyed) into a `%Keyframes{}` struct.
@@ -81,7 +82,7 @@ defmodule Loupey.Animation.Keyframes do
     easing_spec = Map.get(map, :easing, :linear)
     iterations = parse_iterations(Map.get(map, :iterations, 1))
     direction = parse_direction(Map.get(map, :direction, :normal))
-    target = Map.get(map, :target)
+    target = parse_target(Map.get(map, :target))
     raw_stops = require_stops!(map)
 
     %__MODULE__{
@@ -135,6 +136,14 @@ defmodule Loupey.Animation.Keyframes do
   defp parse_direction(other) do
     raise ArgumentError,
           "direction must be one of #{inspect(@valid_directions)}, got #{inspect(other)}"
+  end
+
+  defp parse_target(target) when target in @valid_targets, do: target
+
+  defp parse_target(other) do
+    raise ArgumentError,
+          "target must be one of #{inspect(@valid_targets)}, got #{inspect(other)} — " <>
+            "the renderer routes only `:icon` (default) and `:text` transforms"
   end
 
   defp normalize_stops(stops_map) do

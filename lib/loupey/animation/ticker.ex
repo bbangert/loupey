@@ -197,8 +197,18 @@ defmodule Loupey.Animation.Ticker do
     end
   end
 
-  defp add_flight(ctl, flight, :continuous) do
-    %{ctl | continuous: [flight | ctl.continuous]}
+  # Dedup continuous animations by keyframe identity. The Engine's
+  # dispatcher only re-installs on rule transitions, so it never tries
+  # to install the same continuous keyframe twice — but a future caller
+  # (or a regressed dispatcher) shouldn't be able to grow this list
+  # unboundedly. One-shots are NOT deduped: firing a `flash` twice in
+  # quick succession is a legitimate use case.
+  defp add_flight(ctl, %InFlight{keyframe: kf} = flight, :continuous) do
+    if Enum.any?(ctl.continuous, &(&1.keyframe == kf)) do
+      ctl
+    else
+      %{ctl | continuous: [flight | ctl.continuous]}
+    end
   end
 
   defp add_flight(ctl, flight, kind) when kind in [:one_shot, :event_one_shot] do

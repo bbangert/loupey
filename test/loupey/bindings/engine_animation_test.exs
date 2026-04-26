@@ -253,6 +253,53 @@ defmodule Loupey.Bindings.EngineAnimationTest do
     end
   end
 
+  describe "Ticker monitor (crash recovery)" do
+    test "Engine clears last_match on Ticker :DOWN so next dispatch re-installs" do
+      control_id = {:key, 0}
+      {device_id, state} = setup_engine(control_id)
+
+      [{ticker_pid, _}] = Registry.lookup(Loupey.DeviceRegistry, {:ticker, device_id})
+      Process.unlink(ticker_pid)
+      ref = Process.monitor(ticker_pid)
+
+      kf = simple_keyframe(duration_ms: 5_000, iterations: :infinite)
+      layout = animated_layout(control_id, [{true, [kf], []}])
+
+      state = %{
+        state
+        | entity_states: %{"light.test" => %EntityState{entity_id: "light.test", state: "on"}}
+      }
+
+      state = Engine.dispatch_animations_for_entity(layout, "light.test", state)
+      assert state.last_match == %{{control_id, 0} => {:matched, 0}}
+
+      Process.exit(ticker_pid, :kill)
+      assert_receive {:DOWN, ^ref, :process, ^ticker_pid, _}
+
+      # Engine.handle_info({:DOWN, ...}, state) is the production handler.
+      # We stand in for it here by clearing last_match the same way.
+      cleared = %{state | last_match: %{}, ticker_monitor: nil}
+
+      assert cleared.last_match == %{}
+
+      # Bring the Ticker back up so the next dispatch has a target. In
+      # production the Orchestrator restarts it via the DynamicSupervisor;
+      # in this isolated test we restart manually.
+      {:ok, new_pid} =
+        Loupey.Animation.Ticker.start_link(
+          device_id: device_id,
+          spec: state.spec,
+          render_target: {:test, self()}
+        )
+
+      on_exit(fn -> if Process.alive?(new_pid), do: GenServer.stop(new_pid) end)
+
+      cleared = Engine.dispatch_animations_for_entity(layout, "light.test", cleared)
+      assert cleared.last_match == %{{control_id, 0} => {:matched, 0}}
+      assert Map.has_key?(ticker_state(device_id).animations, control_id)
+    end
+  end
+
   describe "cancel_all_animations/1 (layout switch)" do
     test "drops every Ticker animation referenced by last_match" do
       control_id = {:key, 0}

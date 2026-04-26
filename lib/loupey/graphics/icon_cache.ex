@@ -84,9 +84,16 @@ defmodule Loupey.Graphics.IconCache do
     end
   end
 
+  # Narrow rescue — `Image.Error` covers the file-not-found / decode-
+  # failure path we want to translate into `:error`. Programmer errors
+  # (FunctionClauseError, ArgumentError) still propagate so we don't
+  # silently swallow real bugs.
   defp safe_thumbnail(path, max_dim) do
     {:ok, Image.thumbnail!(path, max_dim)}
   rescue
-    _ -> :error
+    e in [Image.Error, File.Error] ->
+      require Logger
+      Logger.debug("IconCache: thumbnail failed for #{inspect(path)}: #{Exception.message(e)}")
+      :error
   end
 end

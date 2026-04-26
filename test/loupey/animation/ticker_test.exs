@@ -69,8 +69,11 @@ defmodule Loupey.Animation.TickerTest do
 
     test "tick loop renders no commands when no animations are installed" do
       {_device_id, _pid} = start_ticker_for_test({:key, 0})
-      Process.sleep(100)
-      assert drain_render_messages(20) == []
+      # 100 ms is ~3 ticks at @tick_ms=33. `refute_receive` blocks until
+      # the timeout AND fails fast if any unexpected message arrives,
+      # whereas `Process.sleep + drain` only catches messages already
+      # delivered when sleep returns.
+      refute_receive {:ticker_render, _}, 100
     end
   end
 
