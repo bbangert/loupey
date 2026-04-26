@@ -170,9 +170,10 @@ Bindings.Engine
   │ handle_info({:ha_state_changed, entity_id, new_state, old_state})
   │ LayoutEngine.render_for_entity(layout, entity_id, new_state, spec)
   │   → Rules.match_output(binding, entity_state)
-  │     → {:match, render_instructions}
+  │     → {:match, rule_idx, rule, render_instructions}
   │   → Renderer.render_frame(instructions, control)
   │   → [DrawBuffer | SetLED]
+  │ dispatch_animations_for_entity → Ticker.start_animation / cancel_all
   ▼
 DeviceServer
   │ Driver.encode(RenderCommand) → binary
@@ -180,6 +181,59 @@ DeviceServer
   ▼
 Physical Device (display updates)
 ```
+
+## Animation Pipeline
+
+The animation system layers a per-device tick loop on top of the
+existing render path. Bindings without animation hooks render
+through the direct path unchanged. Bindings *with*
+`animation`/`animations`/`on_enter` hooks (or input rules with
+`animation:` blocks) hand off to `Loupey.Animation.Ticker`, which
+owns the in-flight state and drives a 30 fps tick loop.
+`transitions`/`on_change` are not currently supported in YAML.
+
+```
+Bindings.Engine
+  │ Rules.match_output → {:match, rule_idx, rule, instructions}
+  │ Direct render: send DrawBuffer to DeviceServer (every match)
+  │
+  │ If rule has animation hooks AND last_match[control_id] transitioned:
+  │   - cancel_all on previous control animations (rule_idx changed)
+  │   - install rule.animations as :continuous
+  │   - install rule.on_enter as :one_shot
+  │
+  ▼
+Loupey.Animation.Ticker  (one per device, registered as {:ticker, device_id})
+  │ tick loop @ 33ms cadence (monotonic-time-corrected, no backfill)
+  │ per-control state: continuous + one_shots + base_instructions
+  │ each tick:
+  │   for each animated control:
+  │     compute frame: lerp_keyframe(stops, eased_progress) per flight
+  │     deep-merge frames over base_instructions
+  │     Renderer.render_frame(merged, control)
+  │     send DrawBuffer to DeviceServer.render
+  │   refresh once per display
+  ▼
+DeviceServer → Device
+```
+
+The Ticker takes over rendering for animated controls until all
+their animations complete. When animations finish, the next direct
+render (on the next state change) re-renders the unanimated base.
+On layout switch or profile update, `cancel_all_animations` drops
+every Ticker animation for the device.
+
+v1 only fires rule-transition `on_enter` (one-shot) and continuous
+`animation`/`animations` (loop). Per-property `transitions` and
+`on_change` ship in v2 alongside the engine's resolved-instructions
+diff dispatcher.
+
+The `IconCache` (`Loupey.Graphics.IconCache`) is essential for the
+animation pipeline: composite-heavy tick loops trip
+`pngload: out of order read` if icon images are re-used across
+composites in their lazy form. The cache materializes thumbnailed
+icons via `Vix.Vips.Image.copy_memory/1` and stores them in ETS
+keyed by `{path, max_dim}`.
 
 ### Profile Activation Path
 

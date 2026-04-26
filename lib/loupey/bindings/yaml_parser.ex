@@ -45,15 +45,21 @@ defmodule Loupey.Bindings.YamlParser do
   ```
   """
 
+  alias Loupey.Animation.Keyframes
   alias Loupey.Bindings.{Binding, InputRule, OutputRule}
 
   @doc """
   Parse a YAML string into a Binding struct.
+
+  Pass `:keyframes` in `opts` to provide a profile-scoped registry for
+  resolving string animation references (e.g. `animation: "breathe"`).
+  Unknown references raise — fail loud at load time rather than silent
+  no-op at render time.
   """
-  @spec parse_binding(String.t()) :: {:ok, Binding.t()} | {:error, term()}
-  def parse_binding(yaml) do
+  @spec parse_binding(String.t(), keyword()) :: {:ok, Binding.t()} | {:error, term()}
+  def parse_binding(yaml, opts \\ []) do
     case YamlElixir.read_from_string(yaml) do
-      {:ok, data} -> {:ok, build_binding(data)}
+      {:ok, data} -> {:ok, build_binding(data, opts)}
       {:error, _} = error -> error
     end
   end
@@ -61,16 +67,16 @@ defmodule Loupey.Bindings.YamlParser do
   @doc """
   Parse a YAML string into a Blueprint map (name, description, inputs, rules).
   """
-  @spec parse_blueprint(String.t()) :: {:ok, map()} | {:error, term()}
-  def parse_blueprint(yaml) do
+  @spec parse_blueprint(String.t(), keyword()) :: {:ok, map()} | {:error, term()}
+  def parse_blueprint(yaml, opts \\ []) do
     case YamlElixir.read_from_string(yaml) do
       {:ok, data} ->
         blueprint = %{
           name: data["name"] || "Untitled",
           description: data["description"] || "",
           inputs: parse_blueprint_inputs(data["inputs"] || %{}),
-          input_rules: parse_input_rules(data["input_rules"] || []),
-          output_rules: parse_output_rules(data["output_rules"] || [])
+          input_rules: parse_input_rules(data["input_rules"] || [], opts),
+          output_rules: parse_output_rules(data["output_rules"] || [], opts)
         }
 
         {:ok, blueprint}
@@ -129,12 +135,12 @@ defmodule Loupey.Bindings.YamlParser do
       load_binding("light_toggle.yaml", %{"entity_id" => "light.living_room"})
 
   """
-  @spec load_binding(String.t(), map()) :: {:ok, Binding.t()} | {:error, term()}
-  def load_binding(path, variables \\ %{}) do
+  @spec load_binding(String.t(), map(), keyword()) :: {:ok, Binding.t()} | {:error, term()}
+  def load_binding(path, variables \\ %{}, opts \\ []) do
     case File.read(path) do
       {:ok, contents} ->
         substituted = substitute_variables(contents, variables)
-        parse_binding(substituted)
+        parse_binding(substituted, opts)
 
       {:error, _} = error ->
         error
@@ -149,30 +155,29 @@ defmodule Loupey.Bindings.YamlParser do
 
   # -- Internal parsing --
 
-  defp build_binding(data) do
+  defp build_binding(data, opts) do
     %Binding{
       entity_id: data["entity_id"],
-      input_rules: parse_input_rules(data["input_rules"] || []),
-      output_rules: parse_output_rules(data["output_rules"] || [])
+      input_rules: parse_input_rules(data["input_rules"] || [], opts),
+      output_rules: parse_output_rules(data["output_rules"] || [], opts)
     }
   end
 
-  defp parse_input_rules(rules) do
-    Enum.map(rules, &parse_input_rule/1)
+  defp parse_input_rules(rules, opts) do
+    Enum.map(rules, &parse_input_rule(&1, opts))
   end
 
-  defp parse_input_rule(rule) do
+  defp parse_input_rule(rule, opts) do
     trigger = parse_trigger(rule["on"])
+    {animation_keys, action_data} = pop_animation_keys(rule)
 
     actions =
       cond do
-        # New format: actions list
         is_list(rule["actions"]) ->
           Enum.map(rule["actions"], &atomize_keys/1)
 
-        # Old format: single action with params
         rule["action"] ->
-          params = Map.drop(rule, ["on", "when", "action"])
+          params = Map.drop(action_data, ["on", "when", "action"])
           [Map.merge(%{action: rule["action"]}, atomize_keys(params))]
 
         true ->
@@ -182,22 +187,69 @@ defmodule Loupey.Bindings.YamlParser do
     %InputRule{
       on: trigger,
       when: rule["when"],
-      actions: actions
+      actions: actions,
+      animations: parse_animations(animation_keys, opts)
     }
   end
 
-  defp parse_output_rules(rules) do
-    Enum.map(rules, &parse_output_rule/1)
+  defp parse_output_rules(rules, opts) do
+    Enum.map(rules, &parse_output_rule(&1, opts))
   end
 
-  defp parse_output_rule(rule) do
+  defp parse_output_rule(rule, opts) do
     condition = parse_condition(rule["when"])
-    instructions = Map.drop(rule, ["when"])
+    {animation_keys, rest} = pop_animation_keys(rule)
+    instructions = Map.drop(rest, ["when"])
 
     %OutputRule{
       when: condition,
-      instructions: atomize_keys(instructions)
+      instructions: atomize_keys(instructions),
+      animations: parse_animations(animation_keys, opts),
+      on_enter: parse_animation_list(animation_keys["on_enter"], opts)
     }
+  end
+
+  # Per-property `transitions` and `on_change` will be added back in
+  # v2 alongside the engine's resolved-instructions diff dispatcher.
+  @animation_keys ~w(animation animations on_enter)
+
+  defp pop_animation_keys(rule) do
+    Enum.reduce(@animation_keys, {%{}, rule}, fn key, {anim, rest} ->
+      case Map.pop(rest, key) do
+        {nil, rest} -> {anim, rest}
+        {value, rest} -> {Map.put(anim, key, value), rest}
+      end
+    end)
+  end
+
+  defp parse_animations(animation_keys, opts) do
+    parse_animation_list(animation_keys["animation"], opts) ++
+      parse_animation_list(animation_keys["animations"], opts)
+  end
+
+  defp parse_animation_list(nil, _opts), do: []
+
+  defp parse_animation_list(list, opts) when is_list(list) do
+    Enum.map(list, &parse_animation_value(&1, opts))
+  end
+
+  defp parse_animation_list(value, opts), do: [parse_animation_value(value, opts)]
+
+  defp parse_animation_value(name, opts) when is_binary(name) do
+    registry = Keyword.get(opts, :keyframes, %{})
+
+    case Map.fetch(registry, name) do
+      {:ok, kf} ->
+        kf
+
+      :error ->
+        raise ArgumentError,
+              "unknown keyframe reference #{inspect(name)} — known: #{inspect(Map.keys(registry))}"
+    end
+  end
+
+  defp parse_animation_value(map, _opts) when is_map(map) do
+    map |> atomize_keys() |> Keyframes.parse()
   end
 
   defp parse_trigger("press"), do: :press
@@ -302,7 +354,53 @@ defmodule Loupey.Bindings.YamlParser do
     "to_left" => :to_left,
     "to_right" => :to_right,
     "linear" => :linear,
-    "radial" => :radial
+    "radial" => :radial,
+
+    # Animation hooks on rules. `transition` / `transitions` /
+    # `on_change` will be added back in v2 alongside the engine's
+    # diff-based per-property dispatcher.
+    "animation" => :animation,
+    "animations" => :animations,
+    "on_enter" => :on_enter,
+    "keyframes" => :keyframes,
+    "overlay" => :overlay,
+    "transform" => :transform,
+    "transforms" => :transforms,
+
+    # Keyframe definition fields
+    "duration_ms" => :duration_ms,
+    "easing" => :easing,
+    "iterations" => :iterations,
+    "infinite" => :infinite,
+    # `direction` already declared above for fill direction; the same atom
+    # name is reused for animation direction.
+    "normal" => :normal,
+    "reverse" => :reverse,
+    "alternate" => :alternate,
+    "alternate_reverse" => :alternate_reverse,
+    "translate_x" => :translate_x,
+    "translate_y" => :translate_y,
+    "scale" => :scale,
+    "rotate" => :rotate,
+    "effect" => :effect,
+    "name" => :name,
+
+    # Easing names (curve presets)
+    "ease" => :ease,
+    "ease_in" => :ease_in,
+    "ease_out" => :ease_out,
+    "ease_in_out" => :ease_in_out,
+    "step_start" => :step_start,
+    "step_end" => :step_end,
+    "cubic_bezier" => :cubic_bezier,
+
+    # Effect names
+    "pulse" => :pulse,
+    "flash" => :flash,
+    "shake" => :shake,
+    "wiggle" => :wiggle,
+    "squish" => :squish,
+    "ripple" => :ripple
   }
 
   defp atomize_keys(map) when is_map(map) do

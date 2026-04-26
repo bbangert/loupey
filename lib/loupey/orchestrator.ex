@@ -229,23 +229,59 @@ defmodule Loupey.Orchestrator do
     if engine_running?(device_id) do
       Engine.update_profile(device_id, core_profile)
       Logger.info("Orchestrator: updated engine on #{device_id}")
+      ensure_ticker(device_id)
     else
-      child_spec = %{
-        id: {:engine, device_id},
-        start: {Engine, :start_link, [[device_id: device_id, profile: core_profile]]},
-        restart: :transient
-      }
+      do_start_engine(device_id, core_profile)
+    end
+  end
 
-      case DynamicSupervisor.start_child(Loupey.DeviceSupervisor, child_spec) do
-        {:ok, _pid} ->
-          Logger.info("Orchestrator: started engine on #{device_id}")
+  # Only start a Ticker on the success/already-started branches.
+  # The error branch leaves no Engine running, so a Ticker would be
+  # an orphan accumulating idle per-device processes after repeated
+  # engine start failures.
+  defp do_start_engine(device_id, core_profile) do
+    child_spec = %{
+      id: {:engine, device_id},
+      start: {Engine, :start_link, [[device_id: device_id, profile: core_profile]]},
+      restart: :transient
+    }
 
-        {:error, {:already_started, _}} ->
-          Engine.update_profile(device_id, core_profile)
+    case DynamicSupervisor.start_child(Loupey.DeviceSupervisor, child_spec) do
+      {:ok, _pid} ->
+        Logger.info("Orchestrator: started engine on #{device_id}")
+        ensure_ticker(device_id)
 
-        {:error, reason} ->
-          Logger.error("Orchestrator: failed to start engine on #{device_id}: #{inspect(reason)}")
-      end
+      {:error, {:already_started, _}} ->
+        Engine.update_profile(device_id, core_profile)
+        ensure_ticker(device_id)
+
+      {:error, reason} ->
+        Logger.error("Orchestrator: failed to start engine on #{device_id}: #{inspect(reason)}")
+        :ok
+    end
+  end
+
+  # Tickers are 1-1 with engines. Start one if missing; if start fails,
+  # log and continue — animation is non-essential to the engine's
+  # input/output routing, so a Ticker failure must not take the device
+  # down.
+  defp ensure_ticker(device_id) do
+    case safe_get_spec(device_id) do
+      nil ->
+        :ok
+
+      spec ->
+        case Loupey.Animation.start_ticker(device_id: device_id, spec: spec) do
+          {:ok, _pid} ->
+            :ok
+
+          {:error, reason} ->
+            Logger.warning(
+              "Orchestrator: ticker start failed on #{device_id}: #{inspect(reason)}"
+            )
+
+            :ok
+        end
     end
   end
 
@@ -270,6 +306,8 @@ defmodule Loupey.Orchestrator do
       [] ->
         :ok
     end
+
+    Loupey.Animation.stop_ticker(device_id)
   end
 
   defp engine_running?(device_id) do

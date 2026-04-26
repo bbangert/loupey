@@ -11,7 +11,7 @@ defmodule Loupey.Bindings.LayoutEngine do
   alias Hassock.EntityState
   alias Loupey.Bindings.{Expression, Layout, Profile, Rules}
   alias Loupey.Device.{Control, Spec}
-  alias Loupey.Graphics.Renderer
+  alias Loupey.Graphics.{IconCache, Renderer}
   alias Loupey.RenderCommands.{DrawBuffer, SetLED}
 
   @doc """
@@ -126,7 +126,14 @@ defmodule Loupey.Bindings.LayoutEngine do
     entity_id in (when_refs ++ instr_refs)
   end
 
-  defp extract_instruction_refs(instructions) when is_map(instructions) do
+  @doc """
+  Walk a resolved-instructions map and return all entity refs it
+  contains (via `state_of(...)` / `attr_of(...)` template
+  references). Public so the bindings Engine's animation dispatcher
+  can use the same broad reference set as the direct render path.
+  """
+  @spec extract_instruction_refs(map() | term()) :: [String.t()]
+  def extract_instruction_refs(instructions) when is_map(instructions) do
     instructions
     |> Map.values()
     |> Enum.flat_map(fn
@@ -136,7 +143,7 @@ defmodule Loupey.Bindings.LayoutEngine do
     end)
   end
 
-  defp extract_instruction_refs(_), do: []
+  def extract_instruction_refs(_), do: []
 
   defp extract_instruction_refs_value(v) when is_binary(v), do: Expression.extract_entity_refs(v)
   defp extract_instruction_refs_value(_), do: []
@@ -152,7 +159,7 @@ defmodule Loupey.Bindings.LayoutEngine do
 
   defp to_render_commands(binding, entity_state, control) do
     case Rules.match_output(binding, entity_state) do
-      {:match, instructions} ->
+      {:match, _idx, _rule, instructions} ->
         build_commands(instructions, control)
 
       :no_match ->
@@ -200,22 +207,11 @@ defmodule Loupey.Bindings.LayoutEngine do
     # Leave room for text label at the bottom when text is present
     max_dim = if has_text, do: round(min_dim * 0.65), else: min_dim - 4
 
-    case load_icon(path, max_dim) do
+    case IconCache.lookup(path, max_dim) do
       {:ok, img} -> %{instructions | icon: img}
       :error -> Map.delete(instructions, :icon)
     end
   end
 
   defp maybe_load_icon(instructions, _display), do: instructions
-
-  defp load_icon(path, max_dim) do
-    {:ok, Image.thumbnail!(path, max_dim)}
-  rescue
-    error ->
-      Logger.debug(
-        "LayoutEngine.load_icon: failed to thumbnail #{inspect(path)}: #{inspect(error)}"
-      )
-
-      :error
-  end
 end
