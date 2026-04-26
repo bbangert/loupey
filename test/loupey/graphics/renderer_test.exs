@@ -93,6 +93,24 @@ defmodule Loupey.Graphics.RendererTest do
       assert pixels =~ <<255, 0, 0>>
     end
 
+    test "tiny display (min_dim <= 4) drops the icon instead of crashing" do
+      # `IconCache.lookup/2` requires `max_dim > 0`. With min_dim=4 and
+      # no text, the historical `min_dim - 4 = 0` would trip the cache's
+      # guard and crash the render path. Pin that the renderer drops
+      # the icon and renders the bare background instead.
+      tmp_path =
+        Path.join(System.tmp_dir!(), "renderer_tiny_#{System.unique_integer([:positive])}.png")
+
+      :ok = Image.new!(8, 8, color: "#FF0000") |> Image.write!(tmp_path) |> then(fn _ -> :ok end)
+      on_exit(fn -> File.rm(tmp_path) end)
+
+      pixels =
+        Renderer.render_frame(%{background: "#000000", icon: tmp_path}, control(4, 4))
+
+      # 4×4 rgb888 = 48 bytes, all background black. No crash.
+      assert pixels == :binary.copy(<<0, 0, 0>>, 4 * 4)
+    end
+
     test "unresolvable string :icon path renders the frame without the icon" do
       missing =
         Path.join(

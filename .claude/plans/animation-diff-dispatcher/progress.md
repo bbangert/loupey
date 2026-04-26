@@ -193,3 +193,7 @@ mix dialyzer                  # passes
 [07:26] Modified: /var/home/ben/Programming/elixir/loupy/lib/loupey/bindings/yaml_parser.ex
 [07:26] Modified: /var/home/ben/Programming/elixir/loupy/lib/loupey/bindings/yaml_parser.ex
 [07:28] Modified: /var/home/ben/Programming/elixir/loupy/test/loupey/bindings/yaml_parser_test.exs
+[08:06] Modified: /var/home/ben/Programming/elixir/loupy/lib/loupey/graphics/renderer.ex
+[08:06] Modified: /var/home/ben/Programming/elixir/loupy/lib/loupey/schemas/binding.ex
+[08:06] Modified: /var/home/ben/Programming/elixir/loupy/test/loupey/graphics/renderer_test.exs
+[08:06] Modified: /var/home/ben/Programming/elixir/loupy/test/loupey/schemas/binding_test.exs

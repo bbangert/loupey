@@ -45,8 +45,15 @@ defmodule Loupey.Schemas.Binding do
   # resolution paths all *raise* on bad input rather than returning
   # tagged tuples, so a try/rescue is required — we cannot rely solely
   # on `parse_binding/1`'s `{:error, _}` return.
+  #
+  # `get_field/2` (rather than `get_change/2`) returns the current
+  # value whether or not `:yaml` is being changed, so a row with
+  # pre-existing bad YAML can't be updated through the changeset for
+  # any field without first fixing the YAML. That closes the
+  # silent-data-rot path where editing `entity_id` on a broken
+  # binding would silently leave the bad YAML in place.
   defp validate_yaml_parses(changeset) do
-    case get_change(changeset, :yaml) do
+    case get_field(changeset, :yaml) do
       nil ->
         changeset
 

@@ -84,9 +84,18 @@ defmodule Loupey.Graphics.Renderer do
     # Leave room for text label at the bottom when text is present.
     max_dim = if has_text, do: round(min_dim * 0.65), else: min_dim - 4
 
-    case IconCache.lookup(path, max_dim) do
-      {:ok, img} -> %{instructions | icon: img}
-      :error -> Map.delete(instructions, :icon)
+    # `IconCache.lookup/2`'s guard requires `max_dim > 0` — a degenerate
+    # display (or one nearly entirely consumed by a text label) would
+    # otherwise crash the render path. Drop the icon entirely when
+    # there's no usable space; a 1px thumbnail wouldn't render
+    # meaningfully anyway.
+    if max_dim > 0 do
+      case IconCache.lookup(path, max_dim) do
+        {:ok, img} -> %{instructions | icon: img}
+        :error -> Map.delete(instructions, :icon)
+      end
+    else
+      Map.delete(instructions, :icon)
     end
   end
 

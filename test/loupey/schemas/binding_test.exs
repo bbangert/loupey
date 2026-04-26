@@ -89,6 +89,39 @@ defmodule Loupey.Schemas.BindingTest do
 
       assert cs.valid?
     end
+
+    test "validates the existing YAML even when only non-YAML fields change" do
+      # `get_field/2` (vs. `get_change/2`) ensures a pre-existing bad
+      # YAML row can't be updated for any other field without first
+      # fixing the YAML. Closes the silent-data-rot path: editing
+      # `entity_id` on a broken binding would otherwise leave the bad
+      # YAML in place undetected.
+      bad_yaml = """
+      input_rules:
+        - on: touch_start
+          action: call_service
+          domain: light
+          service: toggle
+          animation:
+            effect: flash
+            color: #ffffff
+      """
+
+      existing = %Binding{
+        id: 1,
+        control_id: "{:key, 0}",
+        entity_id: "light.original",
+        yaml: bad_yaml,
+        layout_id: 1
+      }
+
+      # User edits only entity_id — yaml not in the changes map.
+      cs = Binding.changeset(existing, %{"entity_id" => "light.renamed"})
+
+      refute cs.valid?, "changeset must reject when stored YAML is invalid"
+      assert {message, _} = cs.errors[:yaml]
+      assert message =~ "could not be parsed"
+    end
   end
 
   describe "to_core/1 — runtime safety net" do
