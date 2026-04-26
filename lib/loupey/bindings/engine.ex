@@ -14,7 +14,8 @@ defmodule Loupey.Bindings.Engine do
   require Logger
 
   alias Hassock.ServiceCall
-  alias Loupey.Bindings.{Expression, LayoutEngine, Profile, Rules}
+  alias Loupey.Animation.Ticker
+  alias Loupey.Bindings.{Expression, LayoutEngine, OutputRule, Profile, Rules}
   alias Loupey.Bindings.Expression.Evaluator
   alias Loupey.Device.{Control, Spec}
   alias Loupey.DeviceServer
@@ -25,11 +26,16 @@ defmodule Loupey.Bindings.Engine do
 
   defmodule State do
     @moduledoc false
+    # `last_match` tracks the most recent output-rule match for each
+    # `{control_id, binding_idx}`. Shape: `{:matched, rule_idx} | :no_match`.
+    # The Engine uses it to detect rule transitions and decide when to
+    # cancel/install Ticker animations vs. rely on the direct render path.
     defstruct [
       :device_id,
       :spec,
       :profile,
       entity_states: %{},
+      last_match: %{},
       last_touch_move_at: 0,
       pending_touch_move: nil
     ]
@@ -253,12 +259,98 @@ defmodule Loupey.Bindings.Engine do
     if layout do
       commands = LayoutEngine.render_for_entity(layout, entity_id, new_state, state.spec)
       send_commands(state.device_id, commands, state.spec)
+      dispatch_animations_for_entity(layout, entity_id, state)
+    else
+      state
     end
+  end
 
-    state
+  @doc false
+  # Walks bindings affected by an entity-state change, compares each
+  # binding's current rule match against its previous match, and routes
+  # animation hand-offs (start/cancel) to the per-device Ticker as needed.
+  # Returns the updated Engine state with `last_match` advanced.
+  #
+  # Public (with @doc false) so the engine_animation_test suite can drive
+  # the dispatch logic with a real Ticker but without booting the full
+  # Engine GenServer / DeviceServer stack.
+  def dispatch_animations_for_entity(layout, entity_id, state) do
+    Enum.reduce(layout.bindings, state, fn {control_id, control_bindings}, acc ->
+      Enum.with_index(control_bindings)
+      |> Enum.reduce(acc, fn {binding, idx}, acc2 ->
+        if binding_references_entity?(binding, entity_id) do
+          dispatch_binding(binding, idx, control_id, acc2)
+        else
+          acc2
+        end
+      end)
+    end)
+  end
+
+  defp binding_references_entity?(binding, entity_id) do
+    binding.entity_id == entity_id ||
+      Enum.any?(binding.output_rules, &output_rule_references?(&1, entity_id))
+  end
+
+  defp output_rule_references?(rule, entity_id) do
+    when_refs = if is_binary(rule.when), do: Expression.extract_entity_refs(rule.when), else: []
+    when_refs == [entity_id] or entity_id in when_refs
+  end
+
+  defp dispatch_binding(binding, binding_idx, control_id, state) do
+    entity_state = if binding.entity_id, do: Map.get(state.entity_states, binding.entity_id)
+    match = Rules.match_output(binding, entity_state)
+    key = {control_id, binding_idx}
+    prev = Map.get(state.last_match, key, :no_match)
+
+    apply_match_transition(state.device_id, control_id, prev, match)
+    %{state | last_match: Map.put(state.last_match, key, match_summary(match))}
+  end
+
+  defp match_summary({:match, rule_idx, _rule, _instructions}), do: {:matched, rule_idx}
+  defp match_summary(:no_match), do: :no_match
+
+  defp apply_match_transition(_device_id, _control_id, :no_match, :no_match), do: :ok
+
+  defp apply_match_transition(device_id, control_id, {:matched, _}, :no_match) do
+    Ticker.cancel_all(device_id, control_id)
+  end
+
+  defp apply_match_transition(
+         device_id,
+         control_id,
+         :no_match,
+         {:match, _idx, rule, instructions}
+       ) do
+    install_rule_animations(device_id, control_id, rule, instructions)
+  end
+
+  defp apply_match_transition(
+         device_id,
+         control_id,
+         {:matched, prev_idx},
+         {:match, idx, rule, instructions}
+       )
+       when prev_idx != idx do
+    Ticker.cancel_all(device_id, control_id)
+    install_rule_animations(device_id, control_id, rule, instructions)
+  end
+
+  defp apply_match_transition(_device_id, _control_id, {:matched, _}, {:match, _, _, _}), do: :ok
+
+  defp install_rule_animations(device_id, control_id, %OutputRule{} = rule, instructions) do
+    Enum.each(rule.animations, fn kf ->
+      Ticker.start_animation(device_id, control_id, :continuous, kf, instructions)
+    end)
+
+    Enum.each(rule.on_enter, fn kf ->
+      Ticker.start_animation(device_id, control_id, :one_shot, kf, instructions)
+    end)
   end
 
   defp do_switch_layout(state, layout_id) do
+    cancel_all_animations(state)
+
     # Clear all controls first
     clear_commands = LayoutEngine.clear_all(state.spec)
     send_commands(state.device_id, clear_commands, state.spec)
@@ -267,7 +359,19 @@ defmodule Loupey.Bindings.Engine do
       LayoutEngine.switch_layout(state.profile, layout_id, state.entity_states, state.spec)
 
     send_commands(state.device_id, commands, state.spec)
-    %{state | profile: profile}
+    %{state | profile: profile, last_match: %{}}
+  end
+
+  @doc false
+  # Cancel every Ticker animation owned by this device. Used on layout
+  # switches and profile reloads — the new layout's bindings will
+  # re-install whatever animations they declare on first match.
+  def cancel_all_animations(%State{device_id: device_id, last_match: last_match}) do
+    last_match
+    |> Map.keys()
+    |> Enum.map(fn {control_id, _binding_idx} -> control_id end)
+    |> Enum.uniq()
+    |> Enum.each(&Ticker.cancel_all(device_id, &1))
   end
 
   defp do_switch_layout_async(device_id, layout_id) do

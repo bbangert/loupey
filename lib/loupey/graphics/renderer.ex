@@ -25,6 +25,15 @@ defmodule Loupey.Graphics.Renderer do
     - `:align` — `:left`, `:center` (default), `:right`
     - `:valign` — `:top`, `:middle` (default), `:bottom`
     - `:orientation` — `:horizontal` (default) or `:vertical`
+  - `:transform` — apply geometric transform to a layer before compose:
+    - `:target` — `:icon` (default) | `:text`
+    - `:translate_x`, `:translate_y` — pixel offsets added at compose time
+    - `:scale` — scalar multiplier (1.0 = identity), aspect-preserving
+    - `:rotate` — degrees clockwise (90/180/270 fast-path; arbitrary angles
+      via affine for icon/text)
+    Multiple transforms may be passed via `:transforms` as a list of these maps.
+  - `:overlay` — `"#RRGGBB"` or `"#RRGGBBAA"` color composited as a final
+    full-region wash over the rendered frame (used by press_flash).
 
   Gradient support will be added in later milestones.
   """
@@ -52,6 +61,7 @@ defmodule Loupey.Graphics.Renderer do
 
     image
     |> apply_text(instructions, width, height)
+    |> apply_overlay(instructions, width, height)
     |> Image.flatten!()
     |> Format.to_device_format(display.pixel_format)
   end
@@ -98,6 +108,9 @@ defmodule Loupey.Graphics.Renderer do
   defp apply_icon({image, instructions}, _orig, _width, _height), do: {image, instructions}
 
   defp apply_icon_impl(image, instructions, icon, width, height) do
+    transform = transform_for(instructions, :icon)
+    icon = transform_image(icon, transform)
+
     icon_w = Image.width(icon)
     icon_h = Image.height(icon)
     has_text = Map.has_key?(instructions, :text)
@@ -113,9 +126,10 @@ defmodule Loupey.Graphics.Renderer do
         div(height - icon_h, 2)
       end
 
-    instructions = Map.put(instructions, :_icon_bottom, y + icon_h)
+    {tx, ty} = transform_offsets(transform)
+    instructions = Map.put(instructions, :_icon_bottom, y + icon_h + ty)
 
-    {Image.compose!(image, icon, x: max(0, x), y: max(0, y)), instructions}
+    {Image.compose!(image, icon, x: max(0, x + tx), y: max(0, y + ty)), instructions}
   end
 
   defp apply_text(image, %{text: text} = instructions, width, height) when is_binary(text) do
@@ -130,8 +144,11 @@ defmodule Loupey.Graphics.Renderer do
     case Image.Text.text(content, text_fill_color: color, font_size: font_size) do
       {:ok, text_img} ->
         text_img = maybe_rotate(text_img, Map.get(opts, :orientation, :horizontal))
+        text_transform = transform_for(instructions, :text)
+        text_img = transform_image(text_img, text_transform)
         {x, y} = text_position(text_img, width, height, instructions, opts)
-        Image.compose!(image, text_img, x: x, y: y)
+        {tx, ty} = transform_offsets(text_transform)
+        Image.compose!(image, text_img, x: x + tx, y: y + ty)
 
       _ ->
         image
@@ -185,5 +202,80 @@ defmodule Loupey.Graphics.Renderer do
   defp fill_rect(:to_left, amount, width, height) do
     fill_w = round(width * amount / 100)
     {fill_w, height, width - fill_w, 0}
+  end
+
+  # -- Transform & overlay --
+
+  defp apply_overlay(image, %{overlay: color}, width, height) when is_binary(color) do
+    {bg_hex, alpha} = parse_overlay_color(color)
+
+    overlay =
+      width
+      |> Image.new!(height, color: bg_hex)
+      |> add_alpha_band(alpha)
+
+    Image.compose!(image, overlay, x: 0, y: 0)
+  end
+
+  defp apply_overlay(image, _instructions, _width, _height), do: image
+
+  defp add_alpha_band(image, 255), do: image
+
+  defp add_alpha_band(image, alpha) do
+    {:ok, with_alpha} = Operation.bandjoin_const(image, [alpha * 1.0])
+    with_alpha
+  end
+
+  defp parse_overlay_color("#" <> hex) when byte_size(hex) == 8 do
+    <<bg::binary-size(6), a::binary-size(2)>> = hex
+    {"#" <> bg, String.to_integer(a, 16)}
+  end
+
+  defp parse_overlay_color("#" <> _ = color), do: {color, 255}
+
+  defp transform_for(instructions, target) do
+    cond do
+      transforms = Map.get(instructions, :transforms) ->
+        Enum.find(transforms, &(Map.get(&1, :target, :icon) == target))
+
+      transform = Map.get(instructions, :transform) ->
+        if Map.get(transform, :target, :icon) == target, do: transform
+
+      true ->
+        nil
+    end
+  end
+
+  defp transform_offsets(nil), do: {0, 0}
+
+  defp transform_offsets(transform) do
+    {round(Map.get(transform, :translate_x, 0)), round(Map.get(transform, :translate_y, 0))}
+  end
+
+  defp transform_image(image, nil), do: image
+
+  defp transform_image(image, transform) do
+    image
+    |> apply_scale(Map.get(transform, :scale))
+    |> apply_rotate(Map.get(transform, :rotate))
+  end
+
+  defp apply_scale(image, scale) when is_number(scale) and scale > 0 and scale != 1.0 do
+    Operation.resize!(image, scale * 1.0)
+  end
+
+  defp apply_scale(image, _), do: image
+
+  defp apply_rotate(image, nil), do: image
+  defp apply_rotate(image, 0), do: image
+  defp apply_rotate(image, 90), do: Operation.rot!(image, :VIPS_ANGLE_D90)
+  defp apply_rotate(image, 180), do: Operation.rot!(image, :VIPS_ANGLE_D180)
+  defp apply_rotate(image, 270), do: Operation.rot!(image, :VIPS_ANGLE_D270)
+
+  defp apply_rotate(image, degrees) when is_number(degrees) do
+    radians = degrees * :math.pi() / 180.0
+    cos_a = :math.cos(radians)
+    sin_a = :math.sin(radians)
+    Operation.affine!(image, [cos_a, -sin_a, sin_a, cos_a])
   end
 end

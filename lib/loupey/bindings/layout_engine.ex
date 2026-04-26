@@ -152,7 +152,7 @@ defmodule Loupey.Bindings.LayoutEngine do
 
   defp to_render_commands(binding, entity_state, control) do
     case Rules.match_output(binding, entity_state) do
-      {:match, instructions} ->
+      {:match, _idx, _rule, instructions} ->
         build_commands(instructions, control)
 
       :no_match ->
@@ -200,22 +200,11 @@ defmodule Loupey.Bindings.LayoutEngine do
     # Leave room for text label at the bottom when text is present
     max_dim = if has_text, do: round(min_dim * 0.65), else: min_dim - 4
 
-    case load_icon(path, max_dim) do
+    case Loupey.Graphics.IconCache.lookup(path, max_dim) do
       {:ok, img} -> %{instructions | icon: img}
       :error -> Map.delete(instructions, :icon)
     end
   end
 
   defp maybe_load_icon(instructions, _display), do: instructions
-
-  defp load_icon(path, max_dim) do
-    {:ok, Image.thumbnail!(path, max_dim)}
-  rescue
-    error ->
-      Logger.debug(
-        "LayoutEngine.load_icon: failed to thumbnail #{inspect(path)}: #{inspect(error)}"
-      )
-
-      :error
-  end
 end

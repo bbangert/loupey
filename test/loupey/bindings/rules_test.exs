@@ -164,10 +164,10 @@ defmodule Loupey.Bindings.RulesTest do
         ]
       }
 
-      assert {:match, %{icon: "light/on.png", color: "#FFD700"}} =
+      assert {:match, 0, _, %{icon: "light/on.png", color: "#FFD700"}} =
                Rules.match_output(binding, light_on())
 
-      assert {:match, %{icon: "light/off.png", color: "#333333"}} =
+      assert {:match, 1, _, %{icon: "light/off.png", color: "#333333"}} =
                Rules.match_output(binding, light_off())
     end
 
@@ -178,7 +178,7 @@ defmodule Loupey.Bindings.RulesTest do
         ]
       }
 
-      assert {:match, %{text: "always"}} = Rules.match_output(binding, nil)
+      assert {:match, _, _, %{text: "always"}} = Rules.match_output(binding, nil)
     end
 
     test "resolves template expressions in instructions" do
@@ -192,7 +192,7 @@ defmodule Loupey.Bindings.RulesTest do
       }
 
       entity = %EntityState{entity_id: "sensor.temp", state: "72.5"}
-      assert {:match, %{text: "72.5°F"}} = Rules.match_output(binding, entity)
+      assert {:match, _, _, %{text: "72.5°F"}} = Rules.match_output(binding, entity)
     end
 
     test "resolves fill amount from template" do
@@ -211,7 +211,7 @@ defmodule Loupey.Bindings.RulesTest do
         ]
       }
 
-      assert {:match, %{fill: %{amount: amount}}} = Rules.match_output(binding, light_on())
+      assert {:match, _, _, %{fill: %{amount: amount}}} = Rules.match_output(binding, light_on())
       assert_in_delta amount, 78.4, 0.1
     end
 

@@ -247,6 +247,32 @@ defmodule Loupey.Orchestrator do
           Logger.error("Orchestrator: failed to start engine on #{device_id}: #{inspect(reason)}")
       end
     end
+
+    ensure_ticker(device_id)
+  end
+
+  # Tickers are 1-1 with engines. Start one if missing; if start fails,
+  # log and continue — animation is non-essential to the engine's
+  # input/output routing, so a Ticker failure must not take the device
+  # down.
+  defp ensure_ticker(device_id) do
+    case safe_get_spec(device_id) do
+      nil ->
+        :ok
+
+      spec ->
+        case Loupey.Animation.start_ticker(device_id: device_id, spec: spec) do
+          {:ok, _pid} ->
+            :ok
+
+          {:error, reason} ->
+            Logger.warning(
+              "Orchestrator: ticker start failed on #{device_id}: #{inspect(reason)}"
+            )
+
+            :ok
+        end
+    end
   end
 
   # Stop engines only for devices of the given device type — leaves engines
@@ -270,6 +296,8 @@ defmodule Loupey.Orchestrator do
       [] ->
         :ok
     end
+
+    Loupey.Animation.stop_ticker(device_id)
   end
 
   defp engine_running?(device_id) do

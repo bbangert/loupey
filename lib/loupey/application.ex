@@ -14,7 +14,9 @@ defmodule Loupey.Application do
       {Registry, keys: :unique, name: Loupey.DeviceRegistry},
       {Task.Supervisor, name: Loupey.HA.TaskSupervisor},
       Loupey.HA.Supervisor,
+      Loupey.Graphics.IconCache,
       {DynamicSupervisor, name: Loupey.DeviceSupervisor, strategy: :one_for_one},
+      Loupey.Animation,
       Loupey.Orchestrator,
       LoupeyWeb.Endpoint
     ]

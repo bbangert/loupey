@@ -6,7 +6,7 @@ defmodule Loupey.Bindings.Rules do
   """
 
   alias Hassock.EntityState
-  alias Loupey.Bindings.{Binding, Expression}
+  alias Loupey.Bindings.{Binding, Expression, OutputRule}
   alias Loupey.Events.{PressEvent, RotateEvent, TouchEvent}
 
   # -- Input rule matching --
@@ -52,17 +52,23 @@ defmodule Loupey.Bindings.Rules do
   @doc """
   Match a binding's output rules against the current entity state.
 
-  Evaluates `when` conditions top-down, returns `{:match, instructions}`
-  for the first match with all template expressions resolved, or `:no_match`.
+  Evaluates `when` conditions top-down, returns
+  `{:match, rule_idx, rule, instructions}` for the first match with
+  all template expressions resolved, or `:no_match`. The `rule_idx`
+  and `rule` are exposed so the Engine can detect rule transitions
+  and read animation hooks (`animations`, `on_enter`, etc.) without
+  re-running the match.
   """
   @spec match_output(Binding.t(), EntityState.t() | nil) ::
-          {:match, map()} | :no_match
+          {:match, non_neg_integer(), OutputRule.t(), map()} | :no_match
   def match_output(%Binding{output_rules: []}, _entity_state), do: :no_match
 
   def match_output(%Binding{output_rules: rules}, entity_state) do
-    Enum.find_value(rules, :no_match, fn rule ->
+    rules
+    |> Enum.with_index()
+    |> Enum.find_value(:no_match, fn {rule, idx} ->
       if matches_condition?(rule.when, entity_state) do
-        {:match, resolve_instructions(rule.instructions, entity_state)}
+        {:match, idx, rule, resolve_instructions(rule.instructions, entity_state)}
       end
     end)
   end

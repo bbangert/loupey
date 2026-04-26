@@ -1,0 +1,60 @@
+name: "Animated Examples"
+description: "Motivating cases for the v1 CSS-style animation layer.
+
+  - Breathing glow on an idle light (continuous animation overlay).
+  - Press flash on touch_start (input-rule one-shot).
+  - Shake when a sensor's state becomes 'triggered' (on_enter).
+
+  Per-property `transitions` and `on_change` ship in v2 once the
+  engine's resolved-instructions diff dispatcher lands.
+
+  Smoke-tested via `Loupey.Profiles.import_yaml!/1`."
+inputs:
+  entity:
+    type: entity
+    description: "The entity to animate against"
+output_rules:
+  # Idle breathing glow.
+  - when: 'state == "on"'
+    background: "#000000"
+    fill:
+      amount: '{{ (attributes["brightness"] || 0) / 255 * 100 }}'
+      direction: to_top
+      color: "#FFD700"
+    icon: "icons/neon_blue/Lights_On.png"
+    animation:
+      duration_ms: 1800
+      iterations: infinite
+      direction: alternate
+      easing: ease_in_out
+      keyframes:
+        0:
+          overlay: "#FFD70000"
+        100:
+          overlay: "#FFD70044"
+
+  # Shake the icon on the "triggered" state entry.
+  - when: 'state == "triggered"'
+    background: "#330000"
+    icon: "icons/neon_blue/Alerts.png"
+    on_enter:
+      - effect: shake
+        duration_ms: 350
+        amplitude: 5
+
+  - when: true
+    background: "#000000"
+    icon: "icons/neon_blue/Lights_Off.png"
+
+input_rules:
+  # Press flash overlay on touch_start.
+  - on: touch_start
+    action: call_service
+    domain: light
+    service: toggle
+    target: "{{ inputs.entity }}"
+    animation:
+      effect: flash
+      duration_ms: 200
+      color: "#FFFFFF"
+      intensity: 200
