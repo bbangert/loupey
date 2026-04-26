@@ -779,15 +779,13 @@ defmodule Loupey.IntegrationTest do
   # Picks an acknowledgment target: a press-capable LED button if the device
   # has one (Loupedeck), otherwise the first remaining unused display key
   # (Stream Deck). Returns `{kind, control_id, cleanup_fn}`.
-  defp pick_ack_target(device_id, all_keys, used_effect_keys, [%Control{} = led | _]) do
+  defp pick_ack_target(device_id, _all_keys, _used_effect_keys, [%Control{} = led | _]) do
     DeviceServer.render(device_id, %SetLED{control_id: led.id, color: "#00FF00"})
 
     cleanup = fn ->
       DeviceServer.render(device_id, %SetLED{control_id: led.id, color: "#000000"})
     end
 
-    _ = used_effect_keys
-    _ = all_keys
     {:led_button, led.id, cleanup}
   end
 

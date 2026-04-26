@@ -126,7 +126,14 @@ defmodule Loupey.Bindings.LayoutEngine do
     entity_id in (when_refs ++ instr_refs)
   end
 
-  defp extract_instruction_refs(instructions) when is_map(instructions) do
+  @doc """
+  Walk a resolved-instructions map and return all entity refs it
+  contains (via `state_of(...)` / `attr_of(...)` template
+  references). Public so the bindings Engine's animation dispatcher
+  can use the same broad reference set as the direct render path.
+  """
+  @spec extract_instruction_refs(map() | term()) :: [String.t()]
+  def extract_instruction_refs(instructions) when is_map(instructions) do
     instructions
     |> Map.values()
     |> Enum.flat_map(fn
@@ -136,7 +143,7 @@ defmodule Loupey.Bindings.LayoutEngine do
     end)
   end
 
-  defp extract_instruction_refs(_), do: []
+  def extract_instruction_refs(_), do: []
 
   defp extract_instruction_refs_value(v) when is_binary(v), do: Expression.extract_entity_refs(v)
   defp extract_instruction_refs_value(_), do: []

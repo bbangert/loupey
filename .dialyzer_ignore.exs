@@ -23,5 +23,6 @@
   # `renderer_test.exs` overlay tests and the parallel-effects
   # integration test.
   {"lib/loupey/graphics/renderer.ex", :call},
-  {"lib/loupey/graphics/renderer.ex", :unused_fun}
+  {"lib/loupey/graphics/renderer.ex", :unused_fun},
+  {"lib/loupey/graphics/renderer.ex", :no_return}
 ]

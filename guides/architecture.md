@@ -187,9 +187,10 @@ Physical Device (display updates)
 The animation system layers a per-device tick loop on top of the
 existing render path. Bindings without animation hooks render
 through the direct path unchanged. Bindings *with*
-`animation`/`transitions`/`on_enter`/`on_change` hooks (or input
-rules with `animation:` blocks) hand off to `Loupey.Animation.Ticker`,
-which owns the in-flight state and drives a 30 fps tick loop.
+`animation`/`animations`/`on_enter` hooks (or input rules with
+`animation:` blocks) hand off to `Loupey.Animation.Ticker`, which
+owns the in-flight state and drives a 30 fps tick loop.
+`transitions`/`on_change` are not currently supported in YAML.
 
 ```
 Bindings.Engine
@@ -222,11 +223,10 @@ render (on the next state change) re-renders the unanimated base.
 On layout switch or profile update, `cancel_all_animations` drops
 every Ticker animation for the device.
 
-`on_change` (per-property one-shot) and full `transitions`
-property-diff dispatch are stubbed in the engine for v1 — only
-rule-transition `on_enter` and continuous `animation` install are
-fired. v2 will diff resolved instructions and fire per-property
-hooks.
+v1 only fires rule-transition `on_enter` (one-shot) and continuous
+`animation`/`animations` (loop). Per-property `transitions` and
+`on_change` ship in v2 alongside the engine's resolved-instructions
+diff dispatcher.
 
 The `IconCache` (`Loupey.Graphics.IconCache`) is essential for the
 animation pipeline: composite-heavy tick loops trip

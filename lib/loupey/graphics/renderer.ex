@@ -155,10 +155,16 @@ defmodule Loupey.Graphics.Renderer do
         text_img = transform_image(text_img, text_transform)
         {x, y} = text_position(text_img, width, height, instructions, opts)
         {tx, ty} = transform_offsets(text_transform)
+        text_w = Image.width(text_img)
+        text_h = Image.height(text_img)
         # Re-clamp after the translate. `text_position/5` clamps to the
-        # frame, but adding tx/ty after that can re-overflow.
-        final_x = max(0, min(x + tx, width - 1))
-        final_y = max(0, min(y + ty, height - 1))
+        # frame, but adding tx/ty after that can re-overflow. Clamp the
+        # text image's top-left corner so the *transformed* text image
+        # stays within the frame, not just its origin.
+        max_x = max(0, width - text_w)
+        max_y = max(0, height - text_h)
+        final_x = max(0, min(x + tx, max_x))
+        final_y = max(0, min(y + ty, max_y))
         Image.compose!(image, text_img, x: final_x, y: final_y)
 
       _ ->
@@ -219,7 +225,20 @@ defmodule Loupey.Graphics.Renderer do
 
   defp apply_overlay(image, %{overlay: color}, width, height) when is_binary(color) do
     {bg_hex, alpha} = parse_overlay_color(color)
+    compose_overlay(image, bg_hex, alpha, width, height)
+  end
 
+  # Tween's RGB lerp returns `{r, g, b}` for 6-hex stops; without this
+  # head, an animated overlay using two `"#RRGGBB"` strings would
+  # silently no-op on every tick. Treat the tuple as fully opaque.
+  defp apply_overlay(image, %{overlay: {r, g, b}}, width, height)
+       when is_integer(r) and is_integer(g) and is_integer(b) do
+    compose_overlay(image, rgb_to_hex({r, g, b}), 255, width, height)
+  end
+
+  defp apply_overlay(image, _instructions, _width, _height), do: image
+
+  defp compose_overlay(image, bg_hex, alpha, width, height) do
     overlay =
       width
       |> Image.new!(height, color: bg_hex)
@@ -228,7 +247,13 @@ defmodule Loupey.Graphics.Renderer do
     Image.compose!(image, overlay, x: 0, y: 0)
   end
 
-  defp apply_overlay(image, _instructions, _width, _height), do: image
+  defp rgb_to_hex({r, g, b}) do
+    "#" <> hex2(r) <> hex2(g) <> hex2(b)
+  end
+
+  defp hex2(n) do
+    n |> Integer.to_string(16) |> String.pad_leading(2, "0") |> String.upcase()
+  end
 
   defp add_alpha_band(image, 255), do: image
 

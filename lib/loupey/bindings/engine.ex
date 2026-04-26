@@ -135,6 +135,7 @@ defmodule Loupey.Bindings.Engine do
   @impl true
   def handle_info(:render_active_layout, state) do
     render_active_layout(state)
+    state = dispatch_animations_for_active_layout(state)
     {:noreply, state}
   end
 
@@ -321,6 +322,27 @@ defmodule Loupey.Bindings.Engine do
     Enum.reduce(layout.bindings, state, &dispatch_control(&1, entity_id, &2))
   end
 
+  @doc false
+  # Walks every binding in the active layout (regardless of whether it
+  # references a particular entity) and runs the same match-transition
+  # dispatch logic as the per-entity path. Used on layout switch and
+  # initial render so continuous animations install immediately rather
+  # than waiting for the first entity-state change.
+  def dispatch_animations_for_active_layout(state) do
+    case get_active_layout(state) do
+      nil -> state
+      layout -> Enum.reduce(layout.bindings, state, &dispatch_all_bindings(&1, &2))
+    end
+  end
+
+  defp dispatch_all_bindings({control_id, control_bindings}, state) do
+    control_bindings
+    |> Enum.with_index()
+    |> Enum.reduce(state, fn {binding, idx}, acc ->
+      dispatch_binding(binding, idx, control_id, acc)
+    end)
+  end
+
   defp dispatch_control({control_id, control_bindings}, entity_id, state) do
     control_bindings
     |> Enum.with_index()
@@ -342,7 +364,8 @@ defmodule Loupey.Bindings.Engine do
 
   defp output_rule_references?(rule, entity_id) do
     when_refs = if is_binary(rule.when), do: Expression.extract_entity_refs(rule.when), else: []
-    when_refs == [entity_id] or entity_id in when_refs
+    instruction_refs = LayoutEngine.extract_instruction_refs(rule.instructions)
+    entity_id in when_refs or entity_id in instruction_refs
   end
 
   defp dispatch_binding(binding, binding_idx, control_id, state) do
@@ -384,7 +407,37 @@ defmodule Loupey.Bindings.Engine do
     install_rule_animations(device_id, control_id, rule, instructions)
   end
 
-  defp apply_match_transition(_device_id, _control_id, {:matched, _}, {:match, _, _, _}), do: :ok
+  # Same rule, same idx — animation install happened on the prior
+  # transition. But the resolved `instructions` may have changed
+  # (template-driven text/fill amount values), and the Ticker is
+  # holding stale `base_instructions` from when the animation was
+  # first installed. Re-install continuous keyframes: the W4 dedup
+  # in `Ticker.add_flight/3` keeps `started_at` stable so the loop
+  # doesn't restart, but the install path replaces `base_instructions`
+  # with the new resolved value. `on_enter` is *not* re-fired —
+  # that's still gated by rule transitions.
+  defp apply_match_transition(
+         _device_id,
+         _control_id,
+         {:matched, _},
+         {:match, _, %OutputRule{animations: []}, _}
+       ),
+       do: :ok
+
+  defp apply_match_transition(
+         device_id,
+         control_id,
+         {:matched, _},
+         {:match, _, rule, instructions}
+       ) do
+    refresh_continuous(device_id, control_id, rule, instructions)
+  end
+
+  defp refresh_continuous(device_id, control_id, %OutputRule{} = rule, instructions) do
+    Enum.each(rule.animations, fn kf ->
+      Ticker.start_animation(device_id, control_id, :continuous, kf, instructions)
+    end)
+  end
 
   defp install_rule_animations(device_id, control_id, %OutputRule{} = rule, instructions) do
     Enum.each(rule.animations, fn kf ->
@@ -407,7 +460,13 @@ defmodule Loupey.Bindings.Engine do
       LayoutEngine.switch_layout(state.profile, layout_id, state.entity_states, state.spec)
 
     send_commands(state.device_id, commands, state.spec)
-    %{state | profile: profile, last_match: %{}}
+    state = %{state | profile: profile, last_match: %{}}
+
+    # Without this, continuous animations on the new layout's bindings
+    # don't start until the next entity-state change touches a
+    # referenced entity. Walk every binding against current entity
+    # states so the Ticker installs animations immediately.
+    dispatch_animations_for_active_layout(state)
   end
 
   @doc false

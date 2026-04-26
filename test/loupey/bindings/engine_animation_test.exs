@@ -153,6 +153,52 @@ defmodule Loupey.Bindings.EngineAnimationTest do
 
       assert length(second_state.animations[control_id].continuous) == 1
     end
+
+    test "refreshes Ticker base_instructions on same-rule re-match" do
+      control_id = {:key, 0}
+      {_device_id, state} = setup_engine(control_id)
+
+      kf = simple_keyframe(iterations: :infinite)
+
+      # Rule template that pulls text from entity state — when the
+      # entity flips between e.g. "12.5" and "37.0" the rule still
+      # matches (when: true) but the resolved instructions change.
+      rule = %OutputRule{
+        when: true,
+        instructions: %{background: "#000000", text: "{{ state }}°"},
+        animations: [kf],
+        on_enter: []
+      }
+
+      binding = %Loupey.Bindings.Binding{
+        entity_id: "light.test",
+        input_rules: [],
+        output_rules: [rule]
+      }
+
+      layout = %Loupey.Bindings.Layout{name: "default", bindings: %{control_id => [binding]}}
+
+      state = %{
+        state
+        | entity_states: %{"light.test" => %EntityState{entity_id: "light.test", state: "12.5"}}
+      }
+
+      state = Engine.dispatch_animations_for_entity(layout, "light.test", state)
+      first_base = ticker_state(state.device_id).animations[control_id].base_instructions
+      assert first_base.text == "12.5°"
+
+      state = %{
+        state
+        | entity_states: %{"light.test" => %EntityState{entity_id: "light.test", state: "37.0"}}
+      }
+
+      state = Engine.dispatch_animations_for_entity(layout, "light.test", state)
+      second_base = ticker_state(state.device_id).animations[control_id].base_instructions
+      assert second_base.text == "37.0°", "base_instructions were not refreshed on re-match"
+
+      # In-flight continuous flight is preserved (W4 dedup keeps started_at).
+      assert length(ticker_state(state.device_id).animations[control_id].continuous) == 1
+    end
   end
 
   describe "match → match (different rule_idx)" do
@@ -319,6 +365,37 @@ defmodule Loupey.Bindings.EngineAnimationTest do
       :ok = Engine.cancel_all_animations(state)
 
       refute Map.has_key?(ticker_state(state.device_id).animations, control_id)
+    end
+  end
+
+  describe "dispatch_animations_for_active_layout/1 (layout switch + initial render)" do
+    test "installs continuous animations without waiting for an entity event" do
+      control_id = {:key, 0}
+      {_device_id, state} = setup_engine(control_id)
+
+      kf = simple_keyframe(iterations: :infinite)
+      layout = animated_layout(control_id, [{true, [kf], []}])
+
+      profile = %Loupey.Bindings.Profile{
+        name: "test",
+        device_type: "test-device",
+        active_layout: "default",
+        layouts: %{"default" => layout}
+      }
+
+      # No entity-state events yet — but a binding with `entity_id:
+      # "light.test"` and `when: true` matches even with nil state.
+      state = %{state | profile: profile}
+
+      assert ticker_state(state.device_id).animations == %{},
+             "precondition: no animations installed before dispatch"
+
+      state = Engine.dispatch_animations_for_active_layout(state)
+
+      assert Map.has_key?(ticker_state(state.device_id).animations, control_id),
+             "expected animations to install on layout dispatch without state events"
+
+      assert state.last_match == %{{control_id, 0} => {:matched, 0}}
     end
   end
 end
