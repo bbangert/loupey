@@ -17,8 +17,9 @@ defmodule Loupey.Bindings.EngineAnimationTest do
 
   alias Hassock.EntityState
   alias Loupey.Animation.{Keyframes, Ticker}
-  alias Loupey.Bindings.{Binding, Engine, Layout, OutputRule}
+  alias Loupey.Bindings.{Binding, Engine, InputRule, Layout, OutputRule, Rules}
   alias Loupey.Device.{Control, Display, Spec}
+  alias Loupey.Events.PressEvent
 
   defp simple_keyframe(opts) do
     Keyframes.parse(
@@ -396,6 +397,35 @@ defmodule Loupey.Bindings.EngineAnimationTest do
              "expected animations to install on layout dispatch without state events"
 
       assert state.last_match == %{{control_id, 0} => {:matched, 0}}
+    end
+  end
+
+  describe "input-rule animations" do
+    test "Rules.match_input/4 returns the matched rule alongside actions" do
+      kf = simple_keyframe(duration_ms: 200, iterations: 1)
+
+      input_rule = %InputRule{
+        on: :press,
+        actions: [%{action: "call_service", domain: "light", service: "toggle"}],
+        animations: [kf]
+      }
+
+      binding = %Binding{
+        entity_id: "light.test",
+        input_rules: [input_rule],
+        output_rules: []
+      }
+
+      event = %PressEvent{control_id: {:key, 0}, action: :press}
+
+      assert {:actions, ^input_rule, [%{action: "call_service"}]} =
+               Rules.match_input(event, binding, nil)
+
+      # Verify the rule's animations are accessible — the Engine reads
+      # rule.animations and fires :event_one_shots on the touched
+      # control. (Wired through `fire_input_animations/3` in
+      # `Engine.process_binding_input/4`.)
+      assert input_rule.animations == [kf]
     end
   end
 end

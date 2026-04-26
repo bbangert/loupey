@@ -34,7 +34,7 @@ defmodule Loupey.Bindings.RulesTest do
 
       event = %PressEvent{control_id: {:key, 0}, action: :press}
 
-      assert {:actions, [%{action: "call_service", domain: "light", service: "toggle"}]} =
+      assert {:actions, _, [%{action: "call_service", domain: "light", service: "toggle"}]} =
                Rules.match_input(event, binding, nil)
     end
 
@@ -57,7 +57,7 @@ defmodule Loupey.Bindings.RulesTest do
       }
 
       event = %PressEvent{control_id: {:key, 0}, action: :press}
-      assert {:actions, [first, second]} = Rules.match_input(event, binding, nil)
+      assert {:actions, _, [first, second]} = Rules.match_input(event, binding, nil)
       assert first.service == "toggle"
       assert second.service == "media_pause"
     end
@@ -89,10 +89,10 @@ defmodule Loupey.Bindings.RulesTest do
 
       event = %PressEvent{control_id: {:key, 0}, action: :press}
 
-      assert {:actions, [%{service: "media_pause"}]} =
+      assert {:actions, _, [%{service: "media_pause"}]} =
                Rules.match_input(event, binding, media_playing())
 
-      assert {:actions, [%{service: "media_play"}]} =
+      assert {:actions, _, [%{service: "media_play"}]} =
                Rules.match_input(event, binding, light_off())
     end
 
@@ -110,8 +110,8 @@ defmodule Loupey.Bindings.RulesTest do
       cw = %RotateEvent{control_id: :knob_tl, direction: :cw}
       ccw = %RotateEvent{control_id: :knob_tl, direction: :ccw}
 
-      assert {:actions, [%{service: "volume_up"}]} = Rules.match_input(cw, binding, nil)
-      assert {:actions, [%{service: "volume_down"}]} = Rules.match_input(ccw, binding, nil)
+      assert {:actions, _, [%{service: "volume_up"}]} = Rules.match_input(cw, binding, nil)
+      assert {:actions, _, [%{service: "volume_down"}]} = Rules.match_input(ccw, binding, nil)
     end
 
     test "matches switch_layout action" do
@@ -123,7 +123,7 @@ defmodule Loupey.Bindings.RulesTest do
 
       event = %PressEvent{control_id: {:button, 0}, action: :press}
 
-      assert {:actions, [%{action: "switch_layout", layout: "media"}]} =
+      assert {:actions, _, [%{action: "switch_layout", layout: "media"}]} =
                Rules.match_input(event, binding, nil)
     end
 
@@ -139,7 +139,9 @@ defmodule Loupey.Bindings.RulesTest do
       }
 
       event = %PressEvent{control_id: {:key, 0}, action: :press}
-      assert {:actions, [%{target: "light.lr"}]} = Rules.match_input(event, binding, light_on())
+
+      assert {:actions, _, [%{target: "light.lr"}]} =
+               Rules.match_input(event, binding, light_on())
     end
 
     test "returns no_match for empty rules" do

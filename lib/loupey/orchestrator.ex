@@ -229,26 +229,36 @@ defmodule Loupey.Orchestrator do
     if engine_running?(device_id) do
       Engine.update_profile(device_id, core_profile)
       Logger.info("Orchestrator: updated engine on #{device_id}")
+      ensure_ticker(device_id)
     else
-      child_spec = %{
-        id: {:engine, device_id},
-        start: {Engine, :start_link, [[device_id: device_id, profile: core_profile]]},
-        restart: :transient
-      }
-
-      case DynamicSupervisor.start_child(Loupey.DeviceSupervisor, child_spec) do
-        {:ok, _pid} ->
-          Logger.info("Orchestrator: started engine on #{device_id}")
-
-        {:error, {:already_started, _}} ->
-          Engine.update_profile(device_id, core_profile)
-
-        {:error, reason} ->
-          Logger.error("Orchestrator: failed to start engine on #{device_id}: #{inspect(reason)}")
-      end
+      do_start_engine(device_id, core_profile)
     end
+  end
 
-    ensure_ticker(device_id)
+  # Only start a Ticker on the success/already-started branches.
+  # The error branch leaves no Engine running, so a Ticker would be
+  # an orphan accumulating idle per-device processes after repeated
+  # engine start failures.
+  defp do_start_engine(device_id, core_profile) do
+    child_spec = %{
+      id: {:engine, device_id},
+      start: {Engine, :start_link, [[device_id: device_id, profile: core_profile]]},
+      restart: :transient
+    }
+
+    case DynamicSupervisor.start_child(Loupey.DeviceSupervisor, child_spec) do
+      {:ok, _pid} ->
+        Logger.info("Orchestrator: started engine on #{device_id}")
+        ensure_ticker(device_id)
+
+      {:error, {:already_started, _}} ->
+        Engine.update_profile(device_id, core_profile)
+        ensure_ticker(device_id)
+
+      {:error, reason} ->
+        Logger.error("Orchestrator: failed to start engine on #{device_id}: #{inspect(reason)}")
+        :ok
+    end
   end
 
   # Tickers are 1-1 with engines. Start one if missing; if start fails,

@@ -6,7 +6,7 @@ defmodule Loupey.Bindings.Rules do
   """
 
   alias Hassock.EntityState
-  alias Loupey.Bindings.{Binding, Expression, OutputRule}
+  alias Loupey.Bindings.{Binding, Expression, InputRule, OutputRule}
   alias Loupey.Events.{PressEvent, RotateEvent, TouchEvent}
 
   # -- Input rule matching --
@@ -15,7 +15,10 @@ defmodule Loupey.Bindings.Rules do
   Match an input event against a binding's input rules.
 
   Filters rules by trigger type, then evaluates `when` conditions top-down.
-  Returns `{:actions, [action_map]}` for the first matching rule, or `:no_match`.
+  Returns `{:actions, rule, [action_map]}` for the first matching
+  rule (with `rule` exposed so the Engine can fire any
+  `rule.animations` one-shots alongside the action execution), or
+  `:no_match`.
 
   Each action map has at minimum an `:action` key ("call_service" or "switch_layout")
   plus action-specific params (`:domain`, `:service`, `:target`, etc.).
@@ -26,7 +29,7 @@ defmodule Loupey.Bindings.Rules do
           EntityState.t() | nil,
           Loupey.Device.Control.t() | nil
         ) ::
-          {:actions, [map()]} | :no_match
+          {:actions, InputRule.t(), [map()]} | :no_match
   def match_input(event, binding, entity_state, control \\ nil)
 
   def match_input(event, %Binding{input_rules: rules}, entity_state, control) do
@@ -42,7 +45,7 @@ defmodule Loupey.Bindings.Rules do
     |> Enum.find_value(:no_match, fn rule ->
       if matches_condition?(rule.when, entity_state) do
         resolved = Enum.map(rule.actions, &resolve_action(&1, entity_state, event_context))
-        {:actions, resolved}
+        {:actions, rule, resolved}
       end
     end)
   end

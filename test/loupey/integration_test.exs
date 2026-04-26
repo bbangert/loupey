@@ -526,99 +526,34 @@ defmodule Loupey.IntegrationTest do
          })}
       ]
 
-      if length(keys) < length(effects) do
-        IO.puts(
-          "  Need #{length(effects)} display keys for parallel effects demo, got #{length(keys)} — skipping"
+      # `shake`, `wiggle`, and `squish` operate on `target: :icon` —
+      # without an icon in the base instructions, `apply_icon` is a
+      # no-op and the transform never fires (silently invisible). We
+      # refuse to run a partial demo: half the effects would be
+      # invisible, undermining the test's stated goal.
+      icon_path =
+        Enum.find(
+          [
+            "icons/neon_blue/Audio_On.png",
+            "icons/neon_blue/Alerts.png"
+          ],
+          &File.exists?/1
         )
-      else
-        {:ok, _ticker_pid} = Animation.start_ticker(device_id: id, spec: spec)
 
-        # `shake`, `wiggle`, and `squish` operate on `target: :icon` —
-        # without an icon in the base instructions, `apply_icon` is a
-        # no-op and the transform never fires (silently invisible).
-        # Load a stable icon for every effect key so all six render
-        # something the user can see being manipulated.
-        #
-        # CRITICAL: must materialize via `IconCache.lookup/2` (which
-        # calls `Vix.Vips.Image.copy_memory/1`). A bare
-        # `Image.thumbnail!/2` returns a LAZY image — reusing it across
-        # multiple composites trips `pngload: out of order read` and
-        # crashes the Ticker after the first frame.
-        icon_path =
-          Enum.find(
-            [
-              "icons/neon_blue/Audio_On.png",
-              "icons/neon_blue/Alerts.png"
-            ],
-            &File.exists?/1
+      cond do
+        length(keys) < length(effects) ->
+          IO.puts(
+            "  Need #{length(effects)} display keys for parallel effects demo, got #{length(keys)} — skipping"
           )
 
-        icon =
-          if icon_path do
-            max_dim = round(min(hd(keys).display.width, hd(keys).display.height) * 0.55)
-            {:ok, img} = IconCache.lookup(icon_path, max_dim)
-            img
-          end
+        is_nil(icon_path) ->
+          IO.puts(
+            "  No icon at icons/neon_blue/{Audio_On,Alerts}.png — skipping " <>
+              "parallel-effects demo. shake/wiggle/squish would be invisible without an icon."
+          )
 
-        # Pair each effect with a key. Use a contrasting base render per
-        # key so the animation has something visible to layer over.
-        base_for = fn label ->
-          %{
-            background: "#1a1a2e",
-            icon: icon,
-            text: %{
-              content: label,
-              color: "#CCCCCC",
-              font_size: 14,
-              valign: :bottom
-            }
-          }
-        end
-
-        effect_keys = Enum.zip(Enum.take(keys, length(effects)), effects)
-
-        for {key, {label, kf}} <- effect_keys do
-          base = base_for.(label)
-          # Pre-render the base so the key shows the label even before the
-          # first tick lands a frame.
-          render_to_key(id, key, base)
-          :ok = Ticker.start_animation(id, key.id, :continuous, kf, base)
-        end
-
-        refresh_all_displays(id, spec)
-
-        # Ack target: prefer a physical LED+press button (Loupedeck style),
-        # else the first remaining display key (Stream Deck style).
-        {ack_kind, ack_id, ack_cleanup} = pick_ack_target(id, keys, effect_keys, led_controls)
-
-        IO.puts(
-          "\n  Verify all 6 effects are animating in parallel.\n" <>
-            "  Press the GREEN ack target (#{ack_kind}) to confirm — #{@input_timeout_ms}ms timeout."
-        )
-
-        # Accept either a physical press OR a touch_start. Different device
-        # families surface "press" differently; either is a valid ack.
-        ack =
-          receive do
-            {:device_event, ^id, %PressEvent{control_id: ^ack_id, action: :press}} -> :press
-            {:device_event, ^id, %TouchEvent{control_id: ^ack_id, action: :start}} -> :touch
-          after
-            @input_timeout_ms ->
-              flunk(
-                "no acknowledgment received within #{@input_timeout_ms}ms — " <>
-                  "did the effects animate visibly on the device?"
-              )
-          end
-
-        assert ack in [:press, :touch]
-
-        for {key, _} <- effect_keys do
-          :ok = Ticker.cancel_all(id, key.id)
-        end
-
-        ack_cleanup.()
-        Animation.stop_ticker(id)
-        clear_all_displays(id, spec)
+        true ->
+          run_parallel_effects_demo(id, spec, keys, led_controls, effects, icon_path)
       end
     end
   end
@@ -774,6 +709,70 @@ defmodule Loupey.IntegrationTest do
       height: control.display.height,
       pixels: pixels
     })
+  end
+
+  # CRITICAL: must materialize via `IconCache.lookup/2` (which calls
+  # `Vix.Vips.Image.copy_memory/1`). A bare `Image.thumbnail!/2`
+  # returns a LAZY image — reusing it across multiple composites trips
+  # `pngload: out of order read` and crashes the Ticker after the
+  # first frame.
+  defp run_parallel_effects_demo(id, spec, keys, led_controls, effects, icon_path) do
+    {:ok, _ticker_pid} = Animation.start_ticker(device_id: id, spec: spec)
+
+    max_dim = round(min(hd(keys).display.width, hd(keys).display.height) * 0.55)
+    {:ok, icon} = IconCache.lookup(icon_path, max_dim)
+
+    base_for = fn label ->
+      %{
+        background: "#1a1a2e",
+        icon: icon,
+        text: %{
+          content: label,
+          color: "#CCCCCC",
+          font_size: 14,
+          valign: :bottom
+        }
+      }
+    end
+
+    effect_keys = Enum.zip(Enum.take(keys, length(effects)), effects)
+
+    for {key, {label, kf}} <- effect_keys do
+      base = base_for.(label)
+      render_to_key(id, key, base)
+      :ok = Ticker.start_animation(id, key.id, :continuous, kf, base)
+    end
+
+    refresh_all_displays(id, spec)
+
+    {ack_kind, ack_id, ack_cleanup} = pick_ack_target(id, keys, effect_keys, led_controls)
+
+    IO.puts(
+      "\n  Verify all 6 effects are animating in parallel.\n" <>
+        "  Press the GREEN ack target (#{ack_kind}) to confirm — #{@input_timeout_ms}ms timeout."
+    )
+
+    ack =
+      receive do
+        {:device_event, ^id, %PressEvent{control_id: ^ack_id, action: :press}} -> :press
+        {:device_event, ^id, %TouchEvent{control_id: ^ack_id, action: :start}} -> :touch
+      after
+        @input_timeout_ms ->
+          flunk(
+            "no acknowledgment received within #{@input_timeout_ms}ms — " <>
+              "did the effects animate visibly on the device?"
+          )
+      end
+
+    assert ack in [:press, :touch]
+
+    for {key, _} <- effect_keys do
+      :ok = Ticker.cancel_all(id, key.id)
+    end
+
+    ack_cleanup.()
+    Animation.stop_ticker(id)
+    clear_all_displays(id, spec)
   end
 
   # Picks an acknowledgment target: a press-capable LED button if the device

@@ -15,7 +15,7 @@ defmodule Loupey.Bindings.Engine do
 
   alias Hassock.ServiceCall
   alias Loupey.Animation.Ticker
-  alias Loupey.Bindings.{Expression, LayoutEngine, OutputRule, Profile, Rules}
+  alias Loupey.Bindings.{Expression, InputRule, LayoutEngine, OutputRule, Profile, Rules}
   alias Loupey.Bindings.Expression.Evaluator
   alias Loupey.Device.{Control, Spec}
   alias Loupey.DeviceServer
@@ -272,11 +272,53 @@ defmodule Loupey.Bindings.Engine do
       if binding.entity_id, do: Map.get(state.entity_states, binding.entity_id)
 
     case Rules.match_input(event, binding, entity_state, control) do
-      {:actions, action_list} ->
+      {:actions, rule, action_list} ->
+        fire_input_animations(state, event, rule)
         Enum.reduce(action_list, state, &execute_action(&1, event, &2))
 
       :no_match ->
         state
+    end
+  end
+
+  # Input-rule animations fire as event one-shots on the touched
+  # control — e.g. press flash on touch_start. The Ticker's own
+  # `call_if_running/2` gate handles the no-Ticker case, so this
+  # is safe to call eagerly. We use `:event_one_shot` to distinguish
+  # from output-rule on_enter for future stats / debug.
+  defp fire_input_animations(_state, _event, %InputRule{animations: []}), do: :ok
+
+  defp fire_input_animations(state, event, %InputRule{animations: kfs}) do
+    control_id = event_control_id(event)
+    base = base_for_input_animation(state, control_id)
+
+    Enum.each(kfs, fn kf ->
+      Ticker.start_animation(state.device_id, control_id, :event_one_shot, kf, base)
+    end)
+  end
+
+  # The Ticker needs a base layer to render the animation over —
+  # use whatever the most-recent matched output rule produced. If
+  # nothing matches (rare; most bindings have at least an
+  # unconditional fallback), use an empty map and rely on the
+  # animation frames to provide overlay-style values.
+  defp base_for_input_animation(state, control_id) do
+    case Map.get(state.last_match, {control_id, 0}) do
+      {:matched, _rule_idx} ->
+        layout = get_active_layout(state)
+
+        with %{} <- layout,
+             [binding | _] <- Map.get(layout.bindings, control_id, []),
+             entity_state =
+               if(binding.entity_id, do: Map.get(state.entity_states, binding.entity_id)),
+             {:match, _, _, instructions} <- Rules.match_output(binding, entity_state) do
+          instructions
+        else
+          _ -> %{}
+        end
+
+      _ ->
+        %{}
     end
   end
 
