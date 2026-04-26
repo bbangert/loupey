@@ -127,9 +127,16 @@ defmodule Loupey.Graphics.Renderer do
       end
 
     {tx, ty} = transform_offsets(transform)
-    instructions = Map.put(instructions, :_icon_bottom, y + icon_h + ty)
+    compose_x = max(0, x + tx)
+    compose_y = max(0, y + ty)
 
-    {Image.compose!(image, icon, x: max(0, x + tx), y: max(0, y + ty)), instructions}
+    # `:_icon_bottom` is read by `align_y(:bottom, ...)` to place text
+    # directly under the icon. It must reflect the *clamped* y, not the
+    # pre-clamp value — otherwise large negative `translate_y` clamped
+    # to 0 here would still produce a stale icon-bottom calculation.
+    instructions = Map.put(instructions, :_icon_bottom, compose_y + icon_h)
+
+    {Image.compose!(image, icon, x: compose_x, y: compose_y), instructions}
   end
 
   defp apply_text(image, %{text: text} = instructions, width, height) when is_binary(text) do
@@ -148,7 +155,11 @@ defmodule Loupey.Graphics.Renderer do
         text_img = transform_image(text_img, text_transform)
         {x, y} = text_position(text_img, width, height, instructions, opts)
         {tx, ty} = transform_offsets(text_transform)
-        Image.compose!(image, text_img, x: x + tx, y: y + ty)
+        # Re-clamp after the translate. `text_position/5` clamps to the
+        # frame, but adding tx/ty after that can re-overflow.
+        final_x = max(0, min(x + tx, width - 1))
+        final_y = max(0, min(y + ty, height - 1))
+        Image.compose!(image, text_img, x: final_x, y: final_y)
 
       _ ->
         image

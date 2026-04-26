@@ -93,7 +93,7 @@ defmodule Loupey.Animation.Ticker do
         ) :: :ok
   def start_animation(device_id, control_id, kind, %Keyframes{} = kf, base)
       when kind in [:continuous, :one_shot, :event_one_shot] do
-    GenServer.call(via_tuple(device_id), {:start_animation, control_id, kind, kf, base})
+    call_if_running(device_id, {:start_animation, control_id, kind, kf, base})
   end
 
   @doc """
@@ -102,7 +102,19 @@ defmodule Loupey.Animation.Ticker do
   """
   @spec cancel_all(term(), Control.id()) :: :ok
   def cancel_all(device_id, control_id) do
-    GenServer.call(via_tuple(device_id), {:cancel_all, control_id})
+    call_if_running(device_id, {:cancel_all, control_id})
+  end
+
+  # Public-API gate — the Ticker is non-essential, so callers should
+  # never crash when no Ticker is registered (startup race, post-crash
+  # window before re-attach, or a device with the Animation supervisor
+  # disabled). Direct `GenServer.call(via_tuple(...), ...)` would exit
+  # the caller with `:noproc` in those cases.
+  defp call_if_running(device_id, message) do
+    case Registry.lookup(Loupey.DeviceRegistry, {:ticker, device_id}) do
+      [{pid, _}] -> GenServer.call(pid, message)
+      [] -> :ok
+    end
   end
 
   @doc """
@@ -285,15 +297,28 @@ defmodule Loupey.Animation.Ticker do
           # Final frame snaps to the last stop's value so the animation
           # finishes at its declared end state, not at whatever the last
           # tick happened to compute.
-          {kept, [Tween.lerp_keyframe(kf.stops, 1.0) | frames]}
+          {kept, [stamp_target(Tween.lerp_keyframe(kf.stops, 1.0), kf) | frames]}
 
         {iter, progress} ->
           eased = kf.easing.(progress)
           directed = Tween.apply_direction(eased, iter, kf.direction)
-          {[flight | kept], [Tween.lerp_keyframe(kf.stops, directed) | frames]}
+          {[flight | kept], [stamp_target(Tween.lerp_keyframe(kf.stops, directed), kf) | frames]}
       end
     end)
   end
+
+  # Stamp the keyframe's `:target` onto each frame's `:transform` so
+  # the renderer routes transforms to the correct layer. Effects that
+  # declare `target: :text` (or any non-default target) need this —
+  # otherwise the renderer falls back to its `:icon` default. We only
+  # stamp when the frame actually carries a transform; pure-overlay
+  # frames (pulse, flash, ripple) don't need a target.
+  defp stamp_target(%{transform: %{} = transform} = frame, %Keyframes{target: target})
+       when not is_nil(target) do
+    %{frame | transform: Map.put_new(transform, :target, target)}
+  end
+
+  defp stamp_target(frame, _kf), do: frame
 
   defp deep_merge_frames(base, frames) do
     Enum.reduce(frames, base, &deep_merge(&2, &1))
