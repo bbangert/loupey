@@ -259,6 +259,19 @@ defmodule Loupey.Animation.Ticker do
 
         animations =
           if kept == [] do
+            # Emit one final clean frame using the (already-refreshed)
+            # base before dropping the entry. Without this, an
+            # in-progress tick that ran *before* this cancel handler
+            # processed would have already sent a stale frame to
+            # DeviceServer (the tick read the OLD base + the
+            # now-cancelled flight's overlay) and no later Ticker
+            # frame would overwrite it once the entry is dropped.
+            # The clean frame guarantees the LAST write to
+            # DeviceServer matches the new rule's resolved state.
+            #
+            # Skipped when event_one_shots survive: the tick loop
+            # keeps running and naturally produces correct frames.
+            emit_base_frame(state, ctl)
             Map.delete(state.animations, control_id)
           else
             Map.put(state.animations, control_id, %{ctl | continuous: [], one_shots: kept})
@@ -485,6 +498,28 @@ defmodule Loupey.Animation.Ticker do
   defp deep_merge(_a, b), do: b
 
   ## Render dispatch
+
+  # Render and dispatch a single frame using only the supplied
+  # `base_instructions` (no animation overlays). Used by
+  # `cancel_rule_animations/2` to emit a final clean frame so the
+  # last write to DeviceServer matches the new rule's resolved state
+  # — see the cancel handler for the full race-window rationale.
+  defp emit_base_frame(state, %ControlAnims{control: control, base_instructions: base}) do
+    pixels = Renderer.render_frame(base, control)
+    display = control.display
+
+    command = %DrawBuffer{
+      control_id: control.id,
+      x: 0,
+      y: 0,
+      width: display.width,
+      height: display.height,
+      pixels: pixels
+    }
+
+    dispatch_render(state, command)
+    refresh_displays(state)
+  end
 
   defp dispatch_render(%State{render_target: :device_server, device_id: id}, cmd) do
     Loupey.DeviceServer.render(id, cmd)

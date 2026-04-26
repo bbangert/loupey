@@ -214,6 +214,61 @@ defmodule Loupey.Animation.TickerTest do
       assert %{animations: %{}} = Ticker.get_state(device_id)
     end
 
+    test "emits a final clean base frame when dropping the entry" do
+      # Race-fix: an in-progress tick at cancel time may have already
+      # sent a frame computed from the OLD base + a now-cancelled
+      # animation overlay. Without a final clean frame, that stale
+      # frame is the LAST write to DeviceServer once the entry is
+      # dropped. Emitting one base-only frame on cancel guarantees
+      # the LAST write matches the (already-refreshed) base.
+      control_id = {:key, 0}
+      {device_id, _pid} = start_ticker_for_test(control_id)
+
+      kf = simple_keyframe(duration_ms: 5_000, iterations: 1)
+      base = %{background: "#0a0a0a"}
+      :ok = Ticker.start_animation(device_id, control_id, :one_shot, kf, base)
+
+      # Let a couple of ticks fire, then drain so the regression
+      # signal isn't polluted by the install/initial-tick frames.
+      Process.sleep(80)
+      _ = drain_render_messages(20)
+
+      :ok = Ticker.cancel_rule_animations(device_id, control_id)
+
+      assert_receive {:ticker_render, %{control_id: ^control_id}}, 100
+
+      # Entry is dropped after the clean frame.
+      assert %{animations: %{}} = Ticker.get_state(device_id)
+
+      # No further frames after the clean one (tick loop is paused).
+      _ = drain_render_messages(20)
+      refute_receive {:ticker_render, _}, 100
+    end
+
+    test "skips the final clean frame when event_one_shots survive" do
+      # The tick loop keeps running and naturally produces correct
+      # frames over the refreshed base — no extra clean frame needed.
+      control_id = {:key, 0}
+      {device_id, _pid} = start_ticker_for_test(control_id)
+
+      kf = simple_keyframe(duration_ms: 5_000, iterations: 1)
+      cont_kf = simple_keyframe(duration_ms: 5_000, iterations: :infinite)
+
+      :ok = Ticker.start_animation(device_id, control_id, :continuous, cont_kf, %{})
+      :ok = Ticker.start_animation(device_id, control_id, :event_one_shot, kf, %{})
+
+      Process.sleep(80)
+      _ = drain_render_messages(20)
+
+      :ok = Ticker.cancel_rule_animations(device_id, control_id)
+
+      # Entry survives with just the event_one_shot. The tick loop
+      # is still scheduled, so frames will keep flowing — but they're
+      # ordinary tick-loop frames, not a synthetic clean frame.
+      ctl = Ticker.get_state(device_id).animations[control_id]
+      assert [%{kind: :event_one_shot}] = ctl.one_shots
+    end
+
     test "no-op when control has no animations installed" do
       control_id = {:key, 0}
       {device_id, _pid} = start_ticker_for_test(control_id)
