@@ -27,6 +27,26 @@ defmodule Loupey.AnimationTest do
 
   defp unique_device_id, do: {:animation_test, make_ref()}
 
+  defp assert_eventually(fun, timeout_ms \\ 500, interval_ms \\ 10) do
+    deadline = System.monotonic_time(:millisecond) + timeout_ms
+    do_assert_eventually(fun, deadline, interval_ms)
+  end
+
+  defp do_assert_eventually(fun, deadline, interval_ms) do
+    if fun.() do
+      :ok
+    else
+      now = System.monotonic_time(:millisecond)
+
+      if now >= deadline do
+        flunk("condition did not become true within deadline")
+      else
+        Process.sleep(interval_ms)
+        do_assert_eventually(fun, deadline, interval_ms)
+      end
+    end
+  end
+
   describe "start_ticker/1" do
     test "starts a Ticker registered under {:ticker, device_id}" do
       device_id = unique_device_id()
@@ -84,7 +104,14 @@ defmodule Loupey.AnimationTest do
       ref = Process.monitor(pid)
       assert :ok = Animation.stop_ticker(device_id)
       assert_receive {:DOWN, ^ref, :process, ^pid, _reason}
-      assert Registry.lookup(Loupey.DeviceRegistry, {:ticker, device_id}) == []
+
+      # Registry cleanup runs via its own monitor on the registered
+      # process. The `:DOWN` we just received only proves the Ticker
+      # process is dead — Registry's own cleanup may still race. Poll
+      # briefly until the entry is gone.
+      assert_eventually(fn ->
+        Registry.lookup(Loupey.DeviceRegistry, {:ticker, device_id}) == []
+      end)
     end
 
     test "is a no-op when no Ticker exists for the device" do
