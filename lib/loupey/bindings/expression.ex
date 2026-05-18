@@ -18,7 +18,7 @@ defmodule Loupey.Bindings.Expression do
     (merged via `resolve_with_context/3`)
   - `state_of(id)` — get any entity's state string by ID
   - `attr_of(id, key)` — get any entity's attribute value by ID and key
-  - `round/1`, arithmetic, comparisons, `||`, map access via `m["k"]`
+  - `round/1`, arithmetic, comparisons, `||`, `&&`, map access via `m["k"]`
 
   ## Examples
 

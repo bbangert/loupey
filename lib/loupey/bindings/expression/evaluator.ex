@@ -28,6 +28,7 @@ defmodule Loupey.Bindings.Expression.Evaluator do
       binop    := expr ("==" | "!=" | ">" | "<" | ">=" | "<=") expr
                 | expr ("+"  | "-"  | "*" | "/" )              expr
                 | expr "||"  expr
+                | expr "&&"  expr
 
       unary    := "-" expr
       access   := expr "[" expr "]"   (Access.get/2 on maps)
@@ -69,13 +70,13 @@ defmodule Loupey.Bindings.Expression.Evaluator do
           | {:call, :state_of, [ast()]}
           | {:call, :round, [ast()]}
           | {:call, :attr_of, [ast()]}
-          | {:op, :== | :!= | :> | :< | :>= | :<= | :+ | :- | :* | :/ | :||, [ast(), ...]}
+          | {:op, :== | :!= | :> | :< | :>= | :<= | :+ | :- | :* | :/ | :|| | :&&, [ast(), ...]}
           | {:neg, ast()}
           | {:access, ast(), ast()}
 
   @allowed_calls %{state_of: 1, attr_of: 2, round: 1}
   @allowed_binary_ops ~w(== != > < >= <= + - * /)a
-  # `||` is handled specially for short-circuit semantics.
+  # `||` and `&&` are handled specially for short-circuit semantics.
 
   # Every legitimate variable identifier a binding expression can reference.
   # Source: `Expression.build_context/1` + `resolve_with_context/3` event
@@ -262,6 +263,9 @@ defmodule Loupey.Bindings.Expression.Evaluator do
       name == :|| ->
         normalize_binary_op(:||, args)
 
+      name == :&& ->
+        normalize_binary_op(:&&, args)
+
       name in @allowed_binary_ops and length(args) == 2 ->
         normalize_binary_op(name, args)
 
@@ -333,6 +337,14 @@ defmodule Loupey.Bindings.Expression.Evaluator do
     case walk(left, ctx) do
       v when v in [false, nil] -> walk(right, ctx)
       v -> v
+    end
+  end
+
+  # Short-circuit `&&` — MUST NOT evaluate the RHS when LHS is falsy.
+  defp walk({:op, :&&, [left, right]}, ctx) do
+    case walk(left, ctx) do
+      v when v in [false, nil] -> v
+      _ -> walk(right, ctx)
     end
   end
 

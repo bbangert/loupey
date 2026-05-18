@@ -166,6 +166,44 @@ defmodule Loupey.Bindings.Expression.EvaluatorTest do
     end
   end
 
+  describe "&& short-circuit" do
+    test "returns RHS when LHS is truthy" do
+      assert eval!(~s(state == "on" && "matched"), ctx()) == "matched"
+    end
+
+    test "returns LHS when LHS is false" do
+      assert eval!(~s(false && "never")) == false
+    end
+
+    test "returns LHS when LHS is nil" do
+      context = ctx(%{state: nil})
+      assert eval!(~s(state && "never"), context) == nil
+    end
+
+    test "does NOT evaluate RHS when LHS is falsy" do
+      context =
+        ctx(%{
+          attr_of: fn _, _ -> raise "should not be called" end
+        })
+
+      source = ~s<false && attr_of("never", "key")>
+      assert eval!(source, context) == false
+    end
+
+    test "compound condition: state plus attribute equality" do
+      context =
+        ctx(%{
+          state: "playing",
+          attributes: %{"media_content_id" => "siriusxm://radio/thebeat"}
+        })
+
+      source =
+        ~s<state == "playing" && attributes["media_content_id"] == "siriusxm://radio/thebeat">
+
+      assert eval!(source, context) == true
+    end
+  end
+
   describe "map access via map[key]" do
     test "reads key from attributes map" do
       assert eval!(~s(attributes["brightness"]), ctx()) == 128
