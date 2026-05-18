@@ -183,7 +183,23 @@ defmodule Loupey.Graphics.Renderer do
     font_size = Map.get(opts, :font_size) || 16
     font_size = if is_binary(font_size), do: String.to_integer(font_size), else: font_size
 
-    case Image.Text.text(content, text_fill_color: color, font_size: font_size) do
+    text_opts = [text_fill_color: color, font_size: font_size]
+
+    text_opts =
+      if String.contains?(content, "\n") do
+        # Multi-line: pin the text canvas to the button axis so Pango can
+        # align each line. Without `:width`, every line gets its own tight
+        # bbox and `:align` is moot. The outer compose then becomes a no-op
+        # on the long axis; vertical placement still works.
+        canvas =
+          if Map.get(opts, :orientation) == :vertical, do: height, else: width
+
+        Keyword.merge(text_opts, width: canvas, align: Map.get(opts, :align, :center))
+      else
+        text_opts
+      end
+
+    case Image.Text.text(content, text_opts) do
       {:ok, text_img} ->
         text_img = maybe_rotate(text_img, Map.get(opts, :orientation, :horizontal))
         text_transform = transform_for(instructions, :text)
