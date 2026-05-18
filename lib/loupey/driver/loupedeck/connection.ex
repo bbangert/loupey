@@ -118,19 +118,33 @@ defmodule Loupey.Driver.Loupedeck.Connection do
     prev_port = port_input(state.port)
     prev_seen = state.bytes_seen
     # `next_tid` because transaction_id 0 is reserved/anomalous — using
-    # it can produce truncated or unanswered responses. The probe write
-    # itself can fail if the UART is genuinely gone, but in that case
-    # the EXIT handler below will fire and stop us; no need to react here.
+    # it can produce truncated or unanswered responses.
     {tid, state} = next_tid(state)
-    _ = write_framed(state.uart_pid, format_message(tid, @health_probe_command, <<>>))
 
-    Process.send_after(
-      self(),
-      {:health_check_eval, prev_port, prev_seen},
-      @health_check_window_ms
-    )
+    # Most write failures take the linked UART process down with them and
+    # would surface as `{:EXIT, ...}` below — but a write returning
+    # `{:error, _}` without the gen_server exiting (transient I/O error,
+    # kernel-side EAGAIN, etc.) would otherwise leave both deltas at zero
+    # and look healthy. Exit immediately so the supervisor restarts —
+    # symmetric with the `{:circuits_uart, _, {:error, _}}` clause above.
+    case write_framed(state.uart_pid, format_message(tid, @health_probe_command, <<>>)) do
+      :ok ->
+        Process.send_after(
+          self(),
+          {:health_check_eval, prev_port, prev_seen},
+          @health_check_window_ms
+        )
 
-    {:noreply, state}
+        {:noreply, state}
+
+      {:error, reason} ->
+        Logger.warning(
+          "Loupedeck #{state.tty}: health probe write failed " <>
+            "(#{inspect(reason)}). Exiting for supervisor restart."
+        )
+
+        {:stop, {:health_probe_write_failed, reason}, state}
+    end
   end
 
   def handle_info({:health_check_eval, prev_port, prev_seen}, state) do
