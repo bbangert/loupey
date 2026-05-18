@@ -16,8 +16,35 @@ defmodule Loupey.Driver.Loupedeck.Connection do
 
   defmodule State do
     @moduledoc false
-    defstruct [:parent, :uart_pid, :tty, transaction_id: 0]
+    defstruct [:parent, :uart_pid, :tty, :port, transaction_id: 0, bytes_seen: 0, stuck_count: 0]
   end
+
+  # Liveness watchdog. The C-side port driver can land in a state where
+  # `Port.info(port, :input)` keeps incrementing (the kernel is still
+  # delivering serial bytes) but the Circuits.UART gen_server never
+  # produces a corresponding `{:circuits_uart, _, _}` message. The device
+  # silently looks dead. A full BEAM restart clears it; killing only the
+  # supervised subtree from the same BEAM also recovers.
+  #
+  # Detection: every `@health_check_interval_ms`, send a benign `:serial`
+  # probe and snapshot both counters. After `@health_check_window_ms`,
+  # compare deltas: `port_delta > 0 && bytes_delta == 0` means bytes
+  # arrived at the port but never made it through to us. Two consecutive
+  # bad checks → `{:stop, :uart_stuck, state}` so the DynamicSupervisor
+  # rebuilds the chain.
+  @health_check_interval_ms 15_000
+  # Generous enough to cover the full probe response — the init handshake
+  # uses the same 2s budget for its initial `Circuits.UART.read/2`. A
+  # `:serial` response is ~30 bytes and arrives in multiple UART chunks;
+  # 500 ms windows the start-of-frame in but cuts off before the rest is
+  # framed, producing false stuck-checks.
+  @health_check_window_ms 2_000
+  @max_consecutive_stuck 2
+
+  # 0x03 = :serial. The device always replies with its serial number;
+  # the driver's `parse/2` returns `[]` for the response (no event
+  # emitted, no side effects).
+  @health_probe_command 0x03
 
   # -- Public API --
 
@@ -60,7 +87,8 @@ defmodule Loupey.Driver.Loupedeck.Connection do
 
     case open_uart(tty) do
       {:ok, uart_pid} ->
-        {:ok, %State{parent: parent, uart_pid: uart_pid, tty: tty}}
+        schedule_health_check()
+        {:ok, %State{parent: parent, uart_pid: uart_pid, tty: tty, port: uart_port(uart_pid)}}
 
       {:error, reason} ->
         {:stop, reason}
@@ -78,12 +106,43 @@ defmodule Loupey.Driver.Loupedeck.Connection do
   @impl true
   def handle_info({:circuits_uart, _tty, data}, state) when is_binary(data) do
     send(state.parent, {:device_data, data})
-    {:noreply, state}
+    {:noreply, %{state | bytes_seen: state.bytes_seen + byte_size(data)}}
   end
 
   def handle_info({:circuits_uart, _tty, {:error, reason}}, state) do
     Logger.warning("UART error from #{state.tty}: #{inspect(reason)}")
     {:stop, {:uart_error, reason}, state}
+  end
+
+  def handle_info(:health_check, state) do
+    prev_port = port_input(state.port)
+    prev_seen = state.bytes_seen
+    # `next_tid` because transaction_id 0 is reserved/anomalous — using
+    # it can produce truncated or unanswered responses. The probe write
+    # itself can fail if the UART is genuinely gone, but in that case
+    # the EXIT handler below will fire and stop us; no need to react here.
+    {tid, state} = next_tid(state)
+    _ = write_framed(state.uart_pid, format_message(tid, @health_probe_command, <<>>))
+
+    Process.send_after(
+      self(),
+      {:health_check_eval, prev_port, prev_seen},
+      @health_check_window_ms
+    )
+
+    {:noreply, state}
+  end
+
+  def handle_info({:health_check_eval, prev_port, prev_seen}, state) do
+    port_delta = port_input(state.port) - prev_port
+    bytes_delta = state.bytes_seen - prev_seen
+
+    if port_delta > 0 and bytes_delta == 0 do
+      handle_stuck_check(state, port_delta)
+    else
+      schedule_health_check()
+      {:noreply, %{state | stuck_count: 0}}
+    end
   end
 
   # The linked UART port died — stop so the supervisor can restart us with
@@ -189,6 +248,54 @@ defmodule Loupey.Driver.Loupedeck.Connection do
   end
 
   defp force_cleanup(_), do: :ok
+
+  defp schedule_health_check do
+    Process.send_after(self(), :health_check, @health_check_interval_ms)
+  end
+
+  # Circuits.UART links its C port to its own gen_server. There's always
+  # exactly one port in the links list once `Circuits.UART.open/3` succeeds.
+  defp uart_port(uart_pid) do
+    case Process.info(uart_pid, :links) do
+      {:links, links} -> Enum.find(links, &is_port/1)
+      _ -> nil
+    end
+  end
+
+  # `Port.info(port, :input)` returns `{:input, n}` while the port is
+  # alive, `nil` or `:undefined` once it closes. Treat absence as 0 so
+  # any subsequent delta against a fresh sample looks healthy rather
+  # than triggering a false stuck-check on a port that's dying anyway —
+  # the EXIT handler will stop us in that case.
+  defp port_input(nil), do: 0
+
+  defp port_input(port) do
+    case Port.info(port, :input) do
+      {:input, n} -> n
+      _ -> 0
+    end
+  end
+
+  defp handle_stuck_check(state, port_delta) do
+    stuck = state.stuck_count + 1
+
+    if stuck >= @max_consecutive_stuck do
+      Logger.error(
+        "Loupedeck #{state.tty}: UART stuck (#{stuck} consecutive checks; " <>
+          "port=+#{port_delta}b, erlang=0b). Exiting for supervisor restart."
+      )
+
+      {:stop, :uart_stuck, state}
+    else
+      Logger.warning(
+        "Loupedeck #{state.tty}: UART possibly stuck (#{stuck}/#{@max_consecutive_stuck}; " <>
+          "port=+#{port_delta}b, erlang=0b). Re-probing."
+      )
+
+      schedule_health_check()
+      {:noreply, %{state | stuck_count: stuck}}
+    end
+  end
 
   # Transaction IDs rotate 1..255 (never 0).
   defp next_tid(%State{transaction_id: tid} = state) do
