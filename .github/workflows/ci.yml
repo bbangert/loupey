@@ -10,10 +10,10 @@ concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 
-# Pin Erlang/Elixir versions in one place. Keep in sync with .tool-versions.
+# Pin Erlang/Elixir versions in one place (the repo has no .tool-versions/mise.toml).
 env:
-  ELIXIR_VERSION: "1.19.4"
-  OTP_VERSION: "28.2"
+  ELIXIR_VERSION: "1.19.5"
+  OTP_VERSION: "28.3"
   MIX_ENV: test
 
 jobs:
