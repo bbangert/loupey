@@ -11,6 +11,15 @@ defmodule Loupey.MixProject do
       listeners: [Phoenix.CodeReloader],
       aliases: aliases(),
       deps: deps(),
+      # cowlib 2.20.0 is the newest release and has no upstream fix for these
+      # two advisories. Neither code path is reachable here: EEF-CVE-2026-43969
+      # is in the *client* cookie encoder (cow_cookie:cookie/1, used by gun,
+      # not by the cowboy server), and EEF-CVE-2026-43966 is in
+      # cow_http_struct_hd:escape_string/2, which loupey never calls with
+      # attacker-controlled input. Drop these once cowlib ships a fix.
+      hex: [
+        ignore_advisories: ["EEF-CVE-2026-43966", "EEF-CVE-2026-43969"]
+      ],
       # Put the Dialyzer PLT files under `priv/plts` instead of the
       # default `_build/<env>/` location. Stable path = narrow cache key
       # in CI (see .github/workflows/ci.yml); the PLT is expensive to
