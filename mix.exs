@@ -47,7 +47,7 @@ defmodule Loupey.MixProject do
       # Device communication
       {:circuits_uart, "~> 1.5"},
       {:hid, github: "lawik/hid"},
-      {:image, "~> 0.55.2"},
+      {:image, "~> 0.72"},
 
       # Home Assistant
       {:hassock, "~> 0.1.3"},
