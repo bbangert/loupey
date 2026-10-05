@@ -164,11 +164,14 @@ jobs:
 
       # `--private` skips Sobelow's external update check.
       #
-      # Config.HTTPS ignored deliberately: Loupey is a LAN/localhost control
-      # panel served by the machine the Loupedeck/Stream Deck is plugged into
-      # (README: http://localhost:4000), with no TLS listener anywhere.
-      # force_ssl would 301 every request to an https port nothing serves.
-      # Put a TLS-terminating proxy in front if it is ever exposed further.
+      # Config.HTTPS ignored deliberately (accepted risk, owner decision):
+      # Loupey is meant to be reached over plain HTTP on a trusted LAN, with
+      # the listener on 0.0.0.0 and no TLS terminator. That means the
+      # Settings page's long-lived Home Assistant token and the session
+      # cookie travel unencrypted on that LAN; the owner accepted this.
+      # force_ssl would only 301 every request to an https port nothing
+      # serves. Revisit (TLS proxy or loopback-only bind) if Loupey is ever
+      # exposed beyond a trusted LAN.
       - name: Run Sobelow
         run: mix sobelow --private --skip --exit --threshold medium --ignore Config.HTTPS
 
