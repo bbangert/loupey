@@ -33,21 +33,20 @@ jobs:
           elixir-version: ${{ env.ELIXIR_VERSION }}
           otp-version: ${{ env.OTP_VERSION }}
 
-      - name: Cache deps
+      # deps and _build share one cache entry so they are always restored as
+      # a matching pair. (Separate entries let an exact-hit deps/ for a new
+      # mix.lock pair with a prefix-restored _build/ from an older lock,
+      # which Mix then treated as up to date.) After a prefix restore,
+      # `mix deps.get` refetches changed deps and Mix recompiles them.
+      - name: Cache deps and build
         uses: actions/cache@v4
         with:
-          path: deps
-          key: deps-${{ runner.os }}-${{ env.ELIXIR_VERSION }}-${{ env.OTP_VERSION }}-${{ hashFiles('**/mix.lock') }}
+          path: |
+            deps
+            _build
+          key: mix-compile-${{ runner.os }}-${{ env.ELIXIR_VERSION }}-${{ env.OTP_VERSION }}-${{ hashFiles('**/mix.lock') }}
           restore-keys: |
-            deps-${{ runner.os }}-${{ env.ELIXIR_VERSION }}-${{ env.OTP_VERSION }}-
-
-      - name: Cache compiled build
-        uses: actions/cache@v4
-        with:
-          path: _build
-          key: build-compile-${{ runner.os }}-${{ env.ELIXIR_VERSION }}-${{ env.OTP_VERSION }}-${{ hashFiles('**/mix.lock') }}
-          restore-keys: |
-            build-compile-${{ runner.os }}-${{ env.ELIXIR_VERSION }}-${{ env.OTP_VERSION }}-
+            mix-compile-${{ runner.os }}-${{ env.ELIXIR_VERSION }}-${{ env.OTP_VERSION }}-
 
       - name: Install dependencies
         run: mix deps.get
@@ -73,21 +72,20 @@ jobs:
           elixir-version: ${{ env.ELIXIR_VERSION }}
           otp-version: ${{ env.OTP_VERSION }}
 
-      - name: Cache deps
+      # deps and _build share one cache entry so they are always restored as
+      # a matching pair. (Separate entries let an exact-hit deps/ for a new
+      # mix.lock pair with a prefix-restored _build/ from an older lock,
+      # which Mix then treated as up to date.) After a prefix restore,
+      # `mix deps.get` refetches changed deps and Mix recompiles them.
+      - name: Cache deps and build
         uses: actions/cache@v4
         with:
-          path: deps
-          key: deps-${{ runner.os }}-${{ env.ELIXIR_VERSION }}-${{ env.OTP_VERSION }}-${{ hashFiles('**/mix.lock') }}
+          path: |
+            deps
+            _build
+          key: mix-test-${{ runner.os }}-${{ env.ELIXIR_VERSION }}-${{ env.OTP_VERSION }}-${{ hashFiles('**/mix.lock') }}
           restore-keys: |
-            deps-${{ runner.os }}-${{ env.ELIXIR_VERSION }}-${{ env.OTP_VERSION }}-
-
-      - name: Cache compiled build
-        uses: actions/cache@v4
-        with:
-          path: _build
-          key: build-test-${{ runner.os }}-${{ env.ELIXIR_VERSION }}-${{ env.OTP_VERSION }}-${{ hashFiles('**/mix.lock') }}
-          restore-keys: |
-            build-test-${{ runner.os }}-${{ env.ELIXIR_VERSION }}-${{ env.OTP_VERSION }}-
+            mix-test-${{ runner.os }}-${{ env.ELIXIR_VERSION }}-${{ env.OTP_VERSION }}-
 
       - name: Install dependencies
         run: mix deps.get
@@ -110,21 +108,20 @@ jobs:
           elixir-version: ${{ env.ELIXIR_VERSION }}
           otp-version: ${{ env.OTP_VERSION }}
 
-      - name: Cache deps
+      # deps and _build share one cache entry so they are always restored as
+      # a matching pair. (Separate entries let an exact-hit deps/ for a new
+      # mix.lock pair with a prefix-restored _build/ from an older lock,
+      # which Mix then treated as up to date.) After a prefix restore,
+      # `mix deps.get` refetches changed deps and Mix recompiles them.
+      - name: Cache deps and build
         uses: actions/cache@v4
         with:
-          path: deps
-          key: deps-${{ runner.os }}-${{ env.ELIXIR_VERSION }}-${{ env.OTP_VERSION }}-${{ hashFiles('**/mix.lock') }}
+          path: |
+            deps
+            _build
+          key: mix-credo-${{ runner.os }}-${{ env.ELIXIR_VERSION }}-${{ env.OTP_VERSION }}-${{ hashFiles('**/mix.lock') }}
           restore-keys: |
-            deps-${{ runner.os }}-${{ env.ELIXIR_VERSION }}-${{ env.OTP_VERSION }}-
-
-      - name: Cache compiled build
-        uses: actions/cache@v4
-        with:
-          path: _build
-          key: build-credo-${{ runner.os }}-${{ env.ELIXIR_VERSION }}-${{ env.OTP_VERSION }}-${{ hashFiles('**/mix.lock') }}
-          restore-keys: |
-            build-credo-${{ runner.os }}-${{ env.ELIXIR_VERSION }}-${{ env.OTP_VERSION }}-
+            mix-credo-${{ runner.os }}-${{ env.ELIXIR_VERSION }}-${{ env.OTP_VERSION }}-
 
       - name: Install dependencies
         run: mix deps.get
@@ -147,21 +144,20 @@ jobs:
           elixir-version: ${{ env.ELIXIR_VERSION }}
           otp-version: ${{ env.OTP_VERSION }}
 
-      - name: Cache deps
+      # deps and _build share one cache entry so they are always restored as
+      # a matching pair. (Separate entries let an exact-hit deps/ for a new
+      # mix.lock pair with a prefix-restored _build/ from an older lock,
+      # which Mix then treated as up to date.) After a prefix restore,
+      # `mix deps.get` refetches changed deps and Mix recompiles them.
+      - name: Cache deps and build
         uses: actions/cache@v4
         with:
-          path: deps
-          key: deps-${{ runner.os }}-${{ env.ELIXIR_VERSION }}-${{ env.OTP_VERSION }}-${{ hashFiles('**/mix.lock') }}
+          path: |
+            deps
+            _build
+          key: mix-sobelow-${{ runner.os }}-${{ env.ELIXIR_VERSION }}-${{ env.OTP_VERSION }}-${{ hashFiles('**/mix.lock') }}
           restore-keys: |
-            deps-${{ runner.os }}-${{ env.ELIXIR_VERSION }}-${{ env.OTP_VERSION }}-
-
-      - name: Cache compiled build
-        uses: actions/cache@v4
-        with:
-          path: _build
-          key: build-sobelow-${{ runner.os }}-${{ env.ELIXIR_VERSION }}-${{ env.OTP_VERSION }}-${{ hashFiles('**/mix.lock') }}
-          restore-keys: |
-            build-sobelow-${{ runner.os }}-${{ env.ELIXIR_VERSION }}-${{ env.OTP_VERSION }}-
+            mix-sobelow-${{ runner.os }}-${{ env.ELIXIR_VERSION }}-${{ env.OTP_VERSION }}-
 
       - name: Install dependencies
         run: mix deps.get
@@ -190,21 +186,20 @@ jobs:
           elixir-version: ${{ env.ELIXIR_VERSION }}
           otp-version: ${{ env.OTP_VERSION }}
 
-      - name: Cache deps
+      # deps and _build share one cache entry so they are always restored as
+      # a matching pair. (Separate entries let an exact-hit deps/ for a new
+      # mix.lock pair with a prefix-restored _build/ from an older lock,
+      # which Mix then treated as up to date.) After a prefix restore,
+      # `mix deps.get` refetches changed deps and Mix recompiles them.
+      - name: Cache deps and build
         uses: actions/cache@v4
         with:
-          path: deps
-          key: deps-${{ runner.os }}-${{ env.ELIXIR_VERSION }}-${{ env.OTP_VERSION }}-${{ hashFiles('**/mix.lock') }}
+          path: |
+            deps
+            _build
+          key: mix-dialyzer-${{ runner.os }}-${{ env.ELIXIR_VERSION }}-${{ env.OTP_VERSION }}-${{ hashFiles('**/mix.lock') }}
           restore-keys: |
-            deps-${{ runner.os }}-${{ env.ELIXIR_VERSION }}-${{ env.OTP_VERSION }}-
-
-      - name: Cache compiled build
-        uses: actions/cache@v4
-        with:
-          path: _build
-          key: build-dialyzer-${{ runner.os }}-${{ env.ELIXIR_VERSION }}-${{ env.OTP_VERSION }}-${{ hashFiles('**/mix.lock') }}
-          restore-keys: |
-            build-dialyzer-${{ runner.os }}-${{ env.ELIXIR_VERSION }}-${{ env.OTP_VERSION }}-
+            mix-dialyzer-${{ runner.os }}-${{ env.ELIXIR_VERSION }}-${{ env.OTP_VERSION }}-
 
       - name: Cache Dialyzer PLTs
         uses: actions/cache@v4
@@ -245,9 +240,9 @@ jobs:
         uses: actions/cache@v4
         with:
           path: deps
-          key: deps-${{ runner.os }}-${{ env.ELIXIR_VERSION }}-${{ env.OTP_VERSION }}-${{ hashFiles('**/mix.lock') }}
+          key: mix-audit-${{ runner.os }}-${{ env.ELIXIR_VERSION }}-${{ env.OTP_VERSION }}-${{ hashFiles('**/mix.lock') }}
           restore-keys: |
-            deps-${{ runner.os }}-${{ env.ELIXIR_VERSION }}-${{ env.OTP_VERSION }}-
+            mix-audit-${{ runner.os }}-${{ env.ELIXIR_VERSION }}-${{ env.OTP_VERSION }}-
 
       - name: Install dependencies
         run: mix deps.get
@@ -290,21 +285,20 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y souffle
 
-      - name: Cache deps
+      # deps and _build share one cache entry so they are always restored as
+      # a matching pair. (Separate entries let an exact-hit deps/ for a new
+      # mix.lock pair with a prefix-restored _build/ from an older lock,
+      # which Mix then treated as up to date.) After a prefix restore,
+      # `mix deps.get` refetches changed deps and Mix recompiles them.
+      - name: Cache deps and build
         uses: actions/cache@v4
         with:
-          path: deps
-          key: deps-${{ runner.os }}-${{ env.ELIXIR_VERSION }}-${{ env.OTP_VERSION }}-${{ hashFiles('**/mix.lock') }}
+          path: |
+            deps
+            _build
+          key: mix-argus-u2404-${{ runner.os }}-${{ env.ELIXIR_VERSION }}-${{ env.OTP_VERSION }}-${{ hashFiles('**/mix.lock') }}
           restore-keys: |
-            deps-${{ runner.os }}-${{ env.ELIXIR_VERSION }}-${{ env.OTP_VERSION }}-
-
-      - name: Cache compiled build
-        uses: actions/cache@v4
-        with:
-          path: _build
-          key: build-argus-u2404-${{ runner.os }}-${{ env.ELIXIR_VERSION }}-${{ env.OTP_VERSION }}-${{ hashFiles('**/mix.lock') }}
-          restore-keys: |
-            build-argus-u2404-${{ runner.os }}-${{ env.ELIXIR_VERSION }}-${{ env.OTP_VERSION }}-
+            mix-argus-u2404-${{ runner.os }}-${{ env.ELIXIR_VERSION }}-${{ env.OTP_VERSION }}-
 
       - name: Install dependencies
         run: mix deps.get
