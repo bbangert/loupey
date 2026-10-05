@@ -23,7 +23,7 @@ defmodule LoupeyWeb.RouterTest do
 
     assert "default-src 'self'" in directives
     assert "script-src 'self'" in directives
-    assert "connect-src 'self'" in directives
+    assert Enum.any?(directives, &String.starts_with?(&1, "connect-src 'self'"))
     assert "object-src 'none'" in directives
     refute policy =~ "unsafe-eval"
 
@@ -33,12 +33,50 @@ defmodule LoupeyWeb.RouterTest do
            )
   end
 
+  describe "connect-src names the LiveView socket origin (Safari)" do
+    defp connect_src(url) do
+      conn =
+        build_conn()
+        |> bypass_through(LoupeyWeb.Router, [:browser])
+        |> get(url)
+
+      [policy] = Plug.Conn.get_resp_header(conn, "content-security-policy")
+
+      policy
+      |> String.split(";")
+      |> Enum.map(&String.trim/1)
+      |> Enum.find(&String.starts_with?(&1, "connect-src"))
+    end
+
+    test "includes the request's host and non-default port" do
+      assert connect_src("http://loupey.local:4000/") ==
+               "connect-src 'self' ws://loupey.local:4000 wss://loupey.local:4000"
+    end
+
+    test "omits a default port" do
+      assert connect_src("http://loupey.local/") ==
+               "connect-src 'self' ws://loupey.local wss://loupey.local"
+    end
+
+    test "never splices a malformed host into the policy" do
+      conn =
+        %{build_conn() | host: "evil.test; script-src *"}
+        |> bypass_through(LoupeyWeb.Router, [:browser])
+        |> get("/")
+
+      [policy] = Plug.Conn.get_resp_header(conn, "content-security-policy")
+      refute policy =~ "evil"
+      assert policy =~ "connect-src 'self'"
+    end
+  end
+
   test "dev LiveDashboard gets a per-request script nonce that matches its script tags" do
     conn = get(build_conn(), "/dev/dashboard/home")
     assert conn.status == 200
 
     assert [policy] = Plug.Conn.get_resp_header(conn, "content-security-policy")
     assert [_, nonce] = Regex.run(~r/script-src 'self' 'nonce-([^']+)'/, policy)
+    assert policy =~ "connect-src 'self' ws://"
     assert conn.resp_body =~ ~s(<script nonce="#{nonce}")
     refute conn.resp_body =~ ~r/<script(?![^>]*nonce=)[^>]*>\s*\S/
 
