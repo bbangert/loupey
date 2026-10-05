@@ -73,7 +73,7 @@ defmodule Loupey.MixProject do
       {:plug_cowboy, "~> 2.7"},
 
       # Database
-      {:ecto_sqlite3, "~> 0.17"},
+      {:ecto_sqlite3, "~> 0.25.0"},
 
       # Dev/test
       {:credo, "~> 1.7", only: [:dev, :test], runtime: false},
