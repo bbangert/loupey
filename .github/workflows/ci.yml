@@ -163,8 +163,14 @@ jobs:
         run: mix deps.get
 
       # `--private` skips Sobelow's external update check.
+      #
+      # Config.HTTPS ignored deliberately: Loupey is a LAN/localhost control
+      # panel served by the machine the Loupedeck/Stream Deck is plugged into
+      # (README: http://localhost:4000), with no TLS listener anywhere.
+      # force_ssl would 301 every request to an https port nothing serves.
+      # Put a TLS-terminating proxy in front if it is ever exposed further.
       - name: Run Sobelow
-        run: mix sobelow --private --skip --exit --threshold medium
+        run: mix sobelow --private --skip --exit --threshold medium --ignore Config.HTTPS
 
   # ---------------------------------------------------------------------------
   # Dialyzer
