@@ -34,12 +34,17 @@ defmodule LoupeyWeb.RouterTest do
   end
 
   describe "connect-src names the LiveView socket origin (Safari)" do
-    defp connect_src(url) do
-      conn =
-        build_conn()
-        |> bypass_through(LoupeyWeb.Router, [:browser])
-        |> get(url)
+    defp connect_src(url), do: build_conn() |> browser_get(url) |> connect_directive()
 
+    # Phoenix.ConnTest can't express an IPv6 host in a URL, so set the
+    # conn's host/port the way Cowboy reports them (unbracketed).
+    defp connect_src_for(host, port),
+      do: %{build_conn() | host: host, port: port} |> browser_get("/") |> connect_directive()
+
+    defp browser_get(conn, url),
+      do: conn |> bypass_through(LoupeyWeb.Router, [:browser]) |> get(url)
+
+    defp connect_directive(conn) do
       [policy] = Plug.Conn.get_resp_header(conn, "content-security-policy")
 
       policy
@@ -53,9 +58,22 @@ defmodule LoupeyWeb.RouterTest do
                "connect-src 'self' ws://loupey.local:4000 wss://loupey.local:4000"
     end
 
-    test "omits a default port" do
+    test "port 80 is only the ws:// default" do
       assert connect_src("http://loupey.local/") ==
-               "connect-src 'self' ws://loupey.local wss://loupey.local"
+               "connect-src 'self' ws://loupey.local wss://loupey.local:80"
+    end
+
+    test "port 443 is only the wss:// default" do
+      assert connect_src("https://loupey.local/") ==
+               "connect-src 'self' ws://loupey.local:443 wss://loupey.local"
+    end
+
+    test "brackets an IPv6 literal on a non-default port" do
+      assert connect_src_for("::1", 4000) == "connect-src 'self' ws://[::1]:4000 wss://[::1]:4000"
+    end
+
+    test "brackets a bare IPv6 literal on port 80" do
+      assert connect_src_for("::1", 80) == "connect-src 'self' ws://[::1] wss://[::1]:80"
     end
 
     test "never splices a malformed host into the policy" do

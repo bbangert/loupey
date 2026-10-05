@@ -67,30 +67,41 @@ defmodule LoupeyWeb.Router do
   # the same-origin ws:/wss: LiveView socket, so name that origin explicitly.
   # Cowboy takes host and port from the request's Host header, i.e. the
   # origin the browser used (a TLS proxy that forwards Host without a port
-  # yields the scheme default, which is omitted). A Host that isn't a plain
-  # hostname/IP[:port] is left out rather than spliced into the header.
+  # yields the scheme default). Each scheme drops only its own default port
+  # (:80 for ws://, :443 for wss://). IPv6 literals arrive unbracketed
+  # (`::1`) and are bracketed for the URI. A Host that isn't a plain
+  # hostname or IP literal is left out rather than spliced into the header.
   defp put_socket_connect_src(conn, _opts) do
-    case socket_origin(conn) do
+    case socket_host(conn.host) do
       nil ->
         conn
 
-      origin ->
+      host ->
+        sources =
+          "ws://#{host}#{port_suffix(conn.port, 80)} wss://#{host}#{port_suffix(conn.port, 443)}"
+
         update_csp(
           conn,
-          &String.replace(
-            &1,
-            "connect-src 'self'",
-            "connect-src 'self' ws://#{origin} wss://#{origin}"
-          )
+          &String.replace(&1, "connect-src 'self'", "connect-src 'self' #{sources}")
         )
     end
   end
 
-  defp socket_origin(%Plug.Conn{host: host, port: port}) do
-    if host =~ ~r/\A(?:[A-Za-z0-9.-]+|\[[0-9A-Fa-f:.]+\])\z/ do
-      if port in [80, 443], do: host, else: "#{host}:#{port}"
+  defp socket_host(host) do
+    cond do
+      host =~ ~r/\A[A-Za-z0-9.-]+\z/ ->
+        host
+
+      host =~ ~r/\A\[?[0-9A-Fa-f:.]*:[0-9A-Fa-f:.]*\]?\z/ ->
+        "[#{String.trim(host, "[") |> String.trim("]")}]"
+
+      true ->
+        nil
     end
   end
+
+  defp port_suffix(default, default), do: ""
+  defp port_suffix(port, _default), do: ":#{port}"
 
   defp update_csp(conn, fun) do
     case Plug.Conn.get_resp_header(conn, "content-security-policy") do
