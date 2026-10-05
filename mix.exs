@@ -5,12 +5,21 @@ defmodule Loupey.MixProject do
     [
       app: :loupey,
       version: "0.1.0",
-      elixir: "~> 1.17",
+      elixir: "~> 1.19",
       elixirc_paths: elixirc_paths(Mix.env()),
       start_permanent: Mix.env() == :prod,
       listeners: [Phoenix.CodeReloader],
       aliases: aliases(),
       deps: deps(),
+      # cowlib 2.20.0 is the newest release and has no upstream fix for these
+      # two advisories. Neither code path is reachable here: EEF-CVE-2026-43969
+      # is in the *client* cookie encoder (cow_cookie:cookie/1, used by gun,
+      # not by the cowboy server), and EEF-CVE-2026-43966 is in
+      # cow_http_struct_hd:escape_string/2, which loupey never calls with
+      # attacker-controlled input. Drop these once cowlib ships a fix.
+      hex: [
+        ignore_advisories: ["EEF-CVE-2026-43966", "EEF-CVE-2026-43969"]
+      ],
       # Put the Dialyzer PLT files under `priv/plts` instead of the
       # default `_build/<env>/` location. Stable path = narrow cache key
       # in CI (see .github/workflows/ci.yml); the PLT is expensive to
@@ -38,10 +47,10 @@ defmodule Loupey.MixProject do
       # Device communication
       {:circuits_uart, "~> 1.5"},
       {:hid, github: "lawik/hid"},
-      {:image, "~> 0.55.2"},
+      {:image, "~> 0.72"},
 
       # Home Assistant
-      {:hassock, "~> 0.1.3"},
+      {:hassock, "~> 0.2"},
       {:jason, "~> 1.4"},
       {:yaml_elixir, "~> 2.9"},
       {:ymlr, "~> 5.0"},
@@ -51,9 +60,9 @@ defmodule Loupey.MixProject do
       {:phoenix_html, "~> 4.1"},
       {:phoenix_live_view, "~> 1.0"},
       {:phoenix_live_reload, "~> 1.5", only: :dev},
-      {:phoenix_live_dashboard, "~> 0.8"},
+      {:phoenix_live_dashboard, "~> 0.9.1"},
       {:esbuild, "~> 0.8", runtime: Mix.env() == :dev},
-      {:tailwind, "~> 0.2", runtime: Mix.env() == :dev},
+      {:tailwind, "~> 0.5.1", runtime: Mix.env() == :dev},
       {:heroicons,
        github: "tailwindlabs/heroicons",
        tag: "v2.1.1",
@@ -64,11 +73,13 @@ defmodule Loupey.MixProject do
       {:plug_cowboy, "~> 2.7"},
 
       # Database
-      {:ecto_sqlite3, "~> 0.17"},
+      {:ecto_sqlite3, "~> 0.25.0"},
 
       # Dev/test
       {:credo, "~> 1.7", only: [:dev, :test], runtime: false},
-      {:dialyxir, "~> 1.4", only: [:dev, :test], runtime: false}
+      {:dialyxir, "~> 1.4", only: [:dev, :test], runtime: false},
+      {:sobelow, "~> 0.14", only: [:dev, :test], runtime: false},
+      {:argus_beam, "~> 0.20", only: [:dev, :test], runtime: false}
     ]
   end
 

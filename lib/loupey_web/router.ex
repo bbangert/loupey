@@ -1,13 +1,27 @@
 defmodule LoupeyWeb.Router do
   use LoupeyWeb, :router
 
+  # Content-Security-Policy for every browser page. All scripts, styles and
+  # the LiveView socket are served from this origin; scripts get no inline
+  # allowance. `style-src` keeps 'unsafe-inline' because the device grid
+  # sizes its faces with server-rendered `style` attributes. `img-src` and
+  # `font-src` allow `data:` for the inline icons/font in LiveDashboard's
+  # stylesheet (dev only). `connect-src` is widened per request by
+  # `put_socket_connect_src/2` below.
+  # Kept as a literal header map so `mix sobelow` can verify it (Config.CSP).
+  @browser_headers %{
+    "content-security-policy" =>
+      "default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'self'; form-action 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' data:; connect-src 'self'"
+  }
+
   pipeline :browser do
     plug :accepts, ["html"]
     plug :fetch_session
     plug :fetch_live_flash
     plug :put_root_layout, html: {LoupeyWeb.Layouts, :root}
     plug :protect_from_forgery
-    plug :put_secure_browser_headers
+    plug :put_secure_browser_headers, @browser_headers
+    plug :put_socket_connect_src
   end
 
   scope "/", LoupeyWeb do
@@ -22,9 +36,77 @@ defmodule LoupeyWeb.Router do
   if Application.compile_env(:loupey, :dev_routes) do
     import Phoenix.LiveDashboard.Router
 
+    # LiveDashboard's layout has an inline bootstrap <script>, which the
+    # browser pipeline's policy blocks. This pipeline runs after it and
+    # re-issues the same policy with a per-request nonce that the dashboard
+    # puts on its script tags (`csp_nonce_assign_key` below).
+    pipeline :dashboard_csp do
+      plug :put_dashboard_csp_nonce
+    end
+
     scope "/dev" do
-      pipe_through :browser
-      live_dashboard "/dashboard", metrics: LoupeyWeb.Telemetry
+      pipe_through [:browser, :dashboard_csp]
+
+      live_dashboard "/dashboard",
+        metrics: LoupeyWeb.Telemetry,
+        csp_nonce_assign_key: %{script: :csp_nonce, style: :csp_nonce}
+    end
+
+    defp put_dashboard_csp_nonce(conn, _opts) do
+      nonce = 18 |> :crypto.strong_rand_bytes() |> Base.encode64()
+
+      conn
+      |> Plug.Conn.assign(:csp_nonce, nonce)
+      |> update_csp(
+        &String.replace(&1, "script-src 'self'", "script-src 'self' 'nonce-#{nonce}'")
+      )
+    end
+  end
+
+  # Safari (unlike Chrome/Firefox) does not let `connect-src 'self'` match
+  # the same-origin ws:/wss: LiveView socket, so name that origin explicitly.
+  # Cowboy takes host and port from the request's Host header, i.e. the
+  # origin the browser used (a TLS proxy that forwards Host without a port
+  # yields the scheme default). Each scheme drops only its own default port
+  # (:80 for ws://, :443 for wss://). IPv6 literals arrive unbracketed
+  # (`::1`) and are bracketed for the URI. A Host that isn't a plain
+  # hostname or IP literal is left out rather than spliced into the header.
+  defp put_socket_connect_src(conn, _opts) do
+    case socket_host(conn.host) do
+      nil ->
+        conn
+
+      host ->
+        sources =
+          "ws://#{host}#{port_suffix(conn.port, 80)} wss://#{host}#{port_suffix(conn.port, 443)}"
+
+        update_csp(
+          conn,
+          &String.replace(&1, "connect-src 'self'", "connect-src 'self' #{sources}")
+        )
+    end
+  end
+
+  defp socket_host(host) do
+    cond do
+      host =~ ~r/\A[A-Za-z0-9.-]+\z/ ->
+        host
+
+      host =~ ~r/\A\[?[0-9A-Fa-f:.]*:[0-9A-Fa-f:.]*\]?\z/ ->
+        "[#{String.trim(host, "[") |> String.trim("]")}]"
+
+      true ->
+        nil
+    end
+  end
+
+  defp port_suffix(default, default), do: ""
+  defp port_suffix(port, _default), do: ":#{port}"
+
+  defp update_csp(conn, fun) do
+    case Plug.Conn.get_resp_header(conn, "content-security-policy") do
+      [policy] -> Plug.Conn.put_resp_header(conn, "content-security-policy", fun.(policy))
+      _ -> conn
     end
   end
 end

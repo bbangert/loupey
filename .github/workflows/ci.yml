@@ -10,13 +10,53 @@ concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 
-# Pin Erlang/Elixir versions in one place. Keep in sync with .tool-versions.
+# Pin Erlang/Elixir versions in one place (the repo has no .tool-versions/mise.toml).
 env:
-  ELIXIR_VERSION: "1.19.4"
-  OTP_VERSION: "28.2"
+  ELIXIR_VERSION: "1.19.5"
+  OTP_VERSION: "28.3"
   MIX_ENV: test
 
+# Every gate runs as its own parallel job, each with its own _build cache key.
 jobs:
+  # ---------------------------------------------------------------------------
+  # Compile (warnings as errors) + format
+  # ---------------------------------------------------------------------------
+  compile:
+    name: Compile · Format
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up BEAM
+        uses: erlef/setup-beam@v1
+        with:
+          elixir-version: ${{ env.ELIXIR_VERSION }}
+          otp-version: ${{ env.OTP_VERSION }}
+
+      # deps and _build share one cache entry so they are always restored as
+      # a matching pair. (Separate entries let an exact-hit deps/ for a new
+      # mix.lock pair with a prefix-restored _build/ from an older lock,
+      # which Mix then treated as up to date.) After a prefix restore,
+      # `mix deps.get` refetches changed deps and Mix recompiles them.
+      - name: Cache deps and build
+        uses: actions/cache@v4
+        with:
+          path: |
+            deps
+            _build
+          key: mix-compile-${{ runner.os }}-${{ env.ELIXIR_VERSION }}-${{ env.OTP_VERSION }}-${{ hashFiles('**/mix.lock') }}
+          restore-keys: |
+            mix-compile-${{ runner.os }}-${{ env.ELIXIR_VERSION }}-${{ env.OTP_VERSION }}-
+
+      - name: Install dependencies
+        run: mix deps.get
+
+      - name: Compile (warnings as errors)
+        run: mix compile --warnings-as-errors
+
+      - name: Check formatting
+        run: mix format --check-formatted
+
   # ---------------------------------------------------------------------------
   # Tests
   # ---------------------------------------------------------------------------
@@ -32,27 +72,23 @@ jobs:
           elixir-version: ${{ env.ELIXIR_VERSION }}
           otp-version: ${{ env.OTP_VERSION }}
 
-      - name: Cache deps
+      # deps and _build share one cache entry so they are always restored as
+      # a matching pair. (Separate entries let an exact-hit deps/ for a new
+      # mix.lock pair with a prefix-restored _build/ from an older lock,
+      # which Mix then treated as up to date.) After a prefix restore,
+      # `mix deps.get` refetches changed deps and Mix recompiles them.
+      - name: Cache deps and build
         uses: actions/cache@v4
         with:
-          path: deps
-          key: deps-${{ runner.os }}-${{ env.ELIXIR_VERSION }}-${{ env.OTP_VERSION }}-${{ hashFiles('**/mix.lock') }}
+          path: |
+            deps
+            _build
+          key: mix-test-${{ runner.os }}-${{ env.ELIXIR_VERSION }}-${{ env.OTP_VERSION }}-${{ hashFiles('**/mix.lock') }}
           restore-keys: |
-            deps-${{ runner.os }}-${{ env.ELIXIR_VERSION }}-${{ env.OTP_VERSION }}-
-
-      - name: Cache compiled build
-        uses: actions/cache@v4
-        with:
-          path: _build
-          key: build-test-${{ runner.os }}-${{ env.ELIXIR_VERSION }}-${{ env.OTP_VERSION }}-${{ hashFiles('**/mix.lock') }}
-          restore-keys: |
-            build-test-${{ runner.os }}-${{ env.ELIXIR_VERSION }}-${{ env.OTP_VERSION }}-
+            mix-test-${{ runner.os }}-${{ env.ELIXIR_VERSION }}-${{ env.OTP_VERSION }}-
 
       - name: Install dependencies
         run: mix deps.get
-
-      - name: Compile (warnings as errors)
-        run: mix compile --warnings-as-errors
 
       - name: Run tests
         run: mix test
@@ -72,27 +108,72 @@ jobs:
           elixir-version: ${{ env.ELIXIR_VERSION }}
           otp-version: ${{ env.OTP_VERSION }}
 
-      - name: Cache deps
+      # deps and _build share one cache entry so they are always restored as
+      # a matching pair. (Separate entries let an exact-hit deps/ for a new
+      # mix.lock pair with a prefix-restored _build/ from an older lock,
+      # which Mix then treated as up to date.) After a prefix restore,
+      # `mix deps.get` refetches changed deps and Mix recompiles them.
+      - name: Cache deps and build
         uses: actions/cache@v4
         with:
-          path: deps
-          key: deps-${{ runner.os }}-${{ env.ELIXIR_VERSION }}-${{ env.OTP_VERSION }}-${{ hashFiles('**/mix.lock') }}
+          path: |
+            deps
+            _build
+          key: mix-credo-${{ runner.os }}-${{ env.ELIXIR_VERSION }}-${{ env.OTP_VERSION }}-${{ hashFiles('**/mix.lock') }}
           restore-keys: |
-            deps-${{ runner.os }}-${{ env.ELIXIR_VERSION }}-${{ env.OTP_VERSION }}-
-
-      - name: Cache compiled build
-        uses: actions/cache@v4
-        with:
-          path: _build
-          key: build-test-${{ runner.os }}-${{ env.ELIXIR_VERSION }}-${{ env.OTP_VERSION }}-${{ hashFiles('**/mix.lock') }}
-          restore-keys: |
-            build-test-${{ runner.os }}-${{ env.ELIXIR_VERSION }}-${{ env.OTP_VERSION }}-
+            mix-credo-${{ runner.os }}-${{ env.ELIXIR_VERSION }}-${{ env.OTP_VERSION }}-
 
       - name: Install dependencies
         run: mix deps.get
 
       - name: Run Credo
         run: mix credo --strict
+
+  # ---------------------------------------------------------------------------
+  # Sobelow
+  # ---------------------------------------------------------------------------
+  sobelow:
+    name: Sobelow
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up BEAM
+        uses: erlef/setup-beam@v1
+        with:
+          elixir-version: ${{ env.ELIXIR_VERSION }}
+          otp-version: ${{ env.OTP_VERSION }}
+
+      # deps and _build share one cache entry so they are always restored as
+      # a matching pair. (Separate entries let an exact-hit deps/ for a new
+      # mix.lock pair with a prefix-restored _build/ from an older lock,
+      # which Mix then treated as up to date.) After a prefix restore,
+      # `mix deps.get` refetches changed deps and Mix recompiles them.
+      - name: Cache deps and build
+        uses: actions/cache@v4
+        with:
+          path: |
+            deps
+            _build
+          key: mix-sobelow-${{ runner.os }}-${{ env.ELIXIR_VERSION }}-${{ env.OTP_VERSION }}-${{ hashFiles('**/mix.lock') }}
+          restore-keys: |
+            mix-sobelow-${{ runner.os }}-${{ env.ELIXIR_VERSION }}-${{ env.OTP_VERSION }}-
+
+      - name: Install dependencies
+        run: mix deps.get
+
+      # `--private` skips Sobelow's external update check.
+      #
+      # Config.HTTPS ignored deliberately (accepted risk, owner decision):
+      # Loupey is meant to be reached over plain HTTP on a trusted LAN, with
+      # the listener on 0.0.0.0 and no TLS terminator. That means the
+      # Settings page's long-lived Home Assistant token and the session
+      # cookie travel unencrypted on that LAN; the owner accepted this.
+      # force_ssl would only 301 every request to an https port nothing
+      # serves. Revisit (TLS proxy or loopback-only bind) if Loupey is ever
+      # exposed beyond a trusted LAN.
+      - name: Run Sobelow
+        run: mix sobelow --private --skip --exit --threshold medium --ignore Config.HTTPS
 
   # ---------------------------------------------------------------------------
   # Dialyzer
@@ -114,21 +195,20 @@ jobs:
           elixir-version: ${{ env.ELIXIR_VERSION }}
           otp-version: ${{ env.OTP_VERSION }}
 
-      - name: Cache deps
+      # deps and _build share one cache entry so they are always restored as
+      # a matching pair. (Separate entries let an exact-hit deps/ for a new
+      # mix.lock pair with a prefix-restored _build/ from an older lock,
+      # which Mix then treated as up to date.) After a prefix restore,
+      # `mix deps.get` refetches changed deps and Mix recompiles them.
+      - name: Cache deps and build
         uses: actions/cache@v4
         with:
-          path: deps
-          key: deps-${{ runner.os }}-${{ env.ELIXIR_VERSION }}-${{ env.OTP_VERSION }}-${{ hashFiles('**/mix.lock') }}
+          path: |
+            deps
+            _build
+          key: mix-dialyzer-${{ runner.os }}-${{ env.ELIXIR_VERSION }}-${{ env.OTP_VERSION }}-${{ hashFiles('**/mix.lock') }}
           restore-keys: |
-            deps-${{ runner.os }}-${{ env.ELIXIR_VERSION }}-${{ env.OTP_VERSION }}-
-
-      - name: Cache compiled build
-        uses: actions/cache@v4
-        with:
-          path: _build
-          key: build-test-${{ runner.os }}-${{ env.ELIXIR_VERSION }}-${{ env.OTP_VERSION }}-${{ hashFiles('**/mix.lock') }}
-          restore-keys: |
-            build-test-${{ runner.os }}-${{ env.ELIXIR_VERSION }}-${{ env.OTP_VERSION }}-
+            mix-dialyzer-${{ runner.os }}-${{ env.ELIXIR_VERSION }}-${{ env.OTP_VERSION }}-
 
       - name: Cache Dialyzer PLTs
         uses: actions/cache@v4
@@ -149,3 +229,100 @@ jobs:
 
       - name: Run Dialyzer
         run: mix dialyzer --format github
+
+  # ---------------------------------------------------------------------------
+  # Hex audit + unused deps
+  # ---------------------------------------------------------------------------
+  audit:
+    name: Hex audit · Unused deps
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up BEAM
+        uses: erlef/setup-beam@v1
+        with:
+          elixir-version: ${{ env.ELIXIR_VERSION }}
+          otp-version: ${{ env.OTP_VERSION }}
+
+      - name: Cache deps
+        uses: actions/cache@v4
+        with:
+          path: deps
+          key: mix-audit-${{ runner.os }}-${{ env.ELIXIR_VERSION }}-${{ env.OTP_VERSION }}-${{ hashFiles('**/mix.lock') }}
+          restore-keys: |
+            mix-audit-${{ runner.os }}-${{ env.ELIXIR_VERSION }}-${{ env.OTP_VERSION }}-
+
+      - name: Install dependencies
+        run: mix deps.get
+
+      # Advisories with no upstream fix are acknowledged in mix.exs `hex:`.
+      - name: Hex audit
+        run: mix hex.audit
+
+      - name: Check for unused deps in mix.lock
+        run: mix deps.unlock --check-unused
+
+  # ---------------------------------------------------------------------------
+  # Argus
+  # ---------------------------------------------------------------------------
+  #
+  # Souffle's PPA package depends on libffi7, which Ubuntu 24.04 no longer
+  # ships; the Install Souffle step adds a checksum-pinned libffi7 first.
+  # ubuntu-22.04 runners are deprecated, so this job pins ubuntu-24.04.
+  argus:
+    name: Argus
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up BEAM
+        uses: erlef/setup-beam@v1
+        with:
+          elixir-version: ${{ env.ELIXIR_VERSION }}
+          otp-version: ${{ env.OTP_VERSION }}
+
+      - name: Install Souffle
+        run: |
+          # Souffle's PPA package links against libffi7, which Ubuntu 24.04
+          # dropped; install the Ubuntu 20.04 build (checksum-pinned) first.
+          curl -fsSLo /tmp/libffi7.deb http://archive.ubuntu.com/ubuntu/pool/main/libf/libffi/libffi7_3.3-4_amd64.deb
+          echo "4584aa8fef1bf5086168ce2f7078cd2ebd78fdc4cc0d86d958d795d4e0b0f50d  /tmp/libffi7.deb" | sha256sum -c -
+          sudo apt-get install -y /tmp/libffi7.deb
+          sudo wget https://souffle-lang.github.io/ppa/souffle-key.public -O /usr/share/keyrings/souffle-archive-keyring.gpg
+          echo "deb [signed-by=/usr/share/keyrings/souffle-archive-keyring.gpg] https://souffle-lang.github.io/ppa/ubuntu/ stable main" | sudo tee /etc/apt/sources.list.d/souffle.list
+          sudo apt-get update
+          sudo apt-get install -y souffle
+
+      # deps and _build share one cache entry so they are always restored as
+      # a matching pair. (Separate entries let an exact-hit deps/ for a new
+      # mix.lock pair with a prefix-restored _build/ from an older lock,
+      # which Mix then treated as up to date.) After a prefix restore,
+      # `mix deps.get` refetches changed deps and Mix recompiles them.
+      - name: Cache deps and build
+        uses: actions/cache@v4
+        with:
+          path: |
+            deps
+            _build
+          key: mix-argus-u2404-${{ runner.os }}-${{ env.ELIXIR_VERSION }}-${{ env.OTP_VERSION }}-${{ hashFiles('**/mix.lock') }}
+          restore-keys: |
+            mix-argus-u2404-${{ runner.os }}-${{ env.ELIXIR_VERSION }}-${{ env.OTP_VERSION }}-
+
+      - name: Install dependencies
+        run: mix deps.get
+
+      # Compile first so build output never mixes into the JSON report.
+      - name: Compile
+        run: mix compile
+
+      # No file-level ignores: every finding must be fixed or carry a reviewed
+      # entry in .argus-baseline.exs (see scripts/argus_baseline.exs).
+      - name: Run Argus
+        run: mix argus --format json > argus.json
+
+      - name: Self-test the baseline script
+        run: elixir scripts/argus_baseline.exs --self-test
+
+      - name: Check findings against the baseline
+        run: elixir scripts/argus_baseline.exs argus.json .argus-baseline.exs
