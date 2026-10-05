@@ -50,7 +50,7 @@ defmodule Loupey.MixProject do
       {:image, "~> 0.72"},
 
       # Home Assistant
-      {:hassock, "~> 0.1.3"},
+      {:hassock, "~> 0.2"},
       {:jason, "~> 1.4"},
       {:yaml_elixir, "~> 2.9"},
       {:ymlr, "~> 5.0"},
