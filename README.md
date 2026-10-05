@@ -20,7 +20,7 @@ and is **not** supported.
 
 ### Erlang / Elixir
 
-`mix.exs` constrains Elixir to `~> 1.17`. The project is developed and
+`mix.exs` constrains Elixir to `~> 1.19`. The project is developed and
 tested on Erlang/OTP 28 + Elixir 1.19. Install a compatible toolchain
 locally — there's no `.tool-versions` committed at the repo root
 (yet), so pick your own `mise` / `asdf` versions within those
