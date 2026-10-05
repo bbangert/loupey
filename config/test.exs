@@ -11,3 +11,7 @@ config :loupey, LoupeyWeb.Endpoint,
   server: false
 
 config :logger, level: :warning
+
+# Compile the dev-only routes (LiveDashboard) into the test router too, so
+# the dashboard's CSP nonce wiring is covered by LoupeyWeb.RouterTest.
+config :loupey, dev_routes: true

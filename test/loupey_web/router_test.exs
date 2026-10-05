@@ -1,7 +1,8 @@
 defmodule LoupeyWeb.RouterTest do
   @moduledoc """
   The browser pipeline must send a Content-Security-Policy (Sobelow
-  Config.CSP) that keeps scripts same-origin with no inline allowance.
+  Config.CSP) that keeps scripts same-origin with no inline allowance, and
+  the dev LiveDashboard's inline script must be allowed only by nonce.
   """
 
   use ExUnit.Case, async: true
@@ -30,5 +31,19 @@ defmodule LoupeyWeb.RouterTest do
              directives,
              &(String.starts_with?(&1, "script-src") and &1 =~ "unsafe-inline")
            )
+  end
+
+  test "dev LiveDashboard gets a per-request script nonce that matches its script tags" do
+    conn = get(build_conn(), "/dev/dashboard/home")
+    assert conn.status == 200
+
+    assert [policy] = Plug.Conn.get_resp_header(conn, "content-security-policy")
+    assert [_, nonce] = Regex.run(~r/script-src 'self' 'nonce-([^']+)'/, policy)
+    assert conn.resp_body =~ ~s(<script nonce="#{nonce}")
+    refute conn.resp_body =~ ~r/<script(?![^>]*nonce=)[^>]*>\s*\S/
+
+    # A fresh nonce on every request.
+    other = get(build_conn(), "/dev/dashboard/home")
+    refute Plug.Conn.get_resp_header(other, "content-security-policy") == [policy]
   end
 end
