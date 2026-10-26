@@ -103,6 +103,19 @@ defmodule Loupey.HA.EventsTest do
       assert_receive {:ha_ready, true}, 500
     end
 
+    test "goes false and broadcasts when the ready cache exits",
+         %{events: events, pubsub: pubsub} do
+      :ok = Events.subscribe_status(pubsub)
+      cache = spawn(fn -> Process.sleep(:infinity) end)
+
+      send(events, {:hassock_cache, cache, :ready})
+      assert_receive {:ha_ready, true}, 500
+
+      Process.exit(cache, :kill)
+      assert_receive {:ha_ready, false}, 500
+      refute Events.ready?(events)
+    end
+
     test "is false when the server isn't running" do
       refute Events.ready?(:"no_such_events_#{System.unique_integer([:positive])}")
     end

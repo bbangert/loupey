@@ -82,7 +82,9 @@ defmodule LoupeyWeb.SettingsLive do
     case Settings.save_ha_config(%{"url" => url, "token" => token}) do
       {:ok, _config} ->
         # Connect (or reconnect) to HA
-        case Loupey.HA.connect(%Hassock.Config{url: url, token: token}) do
+        # Replace any running connection so new credentials take effect
+        # (hassock 0.3 stops retrying once HA rejects a token).
+        case Loupey.HA.reconnect(%Hassock.Config{url: url, token: token}) do
           # hassock 0.3 returns as soon as the connection process is up
           # and connects (and authenticates) in the background, so this
           # only means the connection is running, not that HA accepted us.
@@ -92,12 +94,6 @@ defmodule LoupeyWeb.SettingsLive do
              socket
              |> put_flash(:info, "Saved. Connecting to Home Assistant...")
              |> assign(ha_connected: false, ha_url: url, ha_token: token, saved: true)}
-
-          {:error, :already_started} ->
-            {:noreply,
-             socket
-             |> put_flash(:info, "Settings saved. Already connected.")
-             |> assign(ha_url: url, ha_token: token, saved: true)}
 
           {:error, reason} ->
             {:noreply,

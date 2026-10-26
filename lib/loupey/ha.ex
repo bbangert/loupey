@@ -28,6 +28,15 @@ defmodule Loupey.HA do
     Loupey.HA.Supervisor.connect(config)
   end
 
+  @doc """
+  Connect with `config`, replacing any running connection (e.g. one that
+  stopped after HA rejected its token).
+  """
+  @spec reconnect(Config.t()) :: {:ok, pid()} | {:error, term()}
+  def reconnect(%Config{} = config) do
+    Loupey.HA.Supervisor.reconnect(config)
+  end
+
   @doc "Disconnect from Home Assistant."
   def disconnect, do: Loupey.HA.Supervisor.disconnect()
 

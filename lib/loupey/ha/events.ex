@@ -96,7 +96,7 @@ defmodule Loupey.HA.Events do
   # re-sync `:ready` after a reconnect); `ready` is the cache that is in
   # sync right now, or nil.
   @impl true
-  def init(pubsub), do: {:ok, %{pubsub: pubsub, announced: nil, ready: nil}}
+  def init(pubsub), do: {:ok, %{pubsub: pubsub, announced: nil, ready: nil, monitor: nil}}
 
   @impl true
   def handle_call(:ready?, _from, %{ready: ready} = state) do
@@ -111,9 +111,19 @@ defmodule Loupey.HA.Events do
   end
 
   def handle_info({:hassock_cache, cache, :ready}, state) do
+    # Watch the cache so a crash or `HA.disconnect/0` (neither sends
+    # `:disconnected`) still flips the status to not ready.
+    if state.monitor, do: Process.demonitor(state.monitor, [:flush])
+    monitor = Process.monitor(cache)
+
     state = set_ready(state, cache)
     Phoenix.PubSub.broadcast(state.pubsub, "ha:connected", :ha_connected)
-    {:noreply, %{state | announced: cache}}
+    {:noreply, %{state | announced: cache, monitor: monitor}}
+  end
+
+  def handle_info({:DOWN, ref, :process, cache, _reason}, %{monitor: ref} = state) do
+    state = if state.ready == cache, do: set_ready(state, nil), else: state
+    {:noreply, %{state | monitor: nil}}
   end
 
   def handle_info({:hassock_cache, _cache, :disconnected}, state) do
