@@ -31,8 +31,18 @@ defmodule Loupey.HA do
   @doc "Disconnect from Home Assistant."
   def disconnect, do: Loupey.HA.Supervisor.disconnect()
 
-  @doc "Check if HA is connected."
+  @doc """
+  Check if the HA connection process is running. It may still be
+  connecting or authenticating; see `ready?/0`.
+  """
   def connected?, do: Loupey.HA.Supervisor.connected?()
+
+  @doc """
+  Check if HA is connected, authenticated and the entity cache is in sync
+  (what the UI should show as "Connected").
+  """
+  @spec ready?() :: boolean()
+  def ready?, do: connected?() and Events.ready?()
 
   @doc """
   Call a Home Assistant service. Fire-and-forget.
@@ -107,4 +117,7 @@ defmodule Loupey.HA do
 
   @doc "Subscribe to the connection-ready signal (`:ha_connected`)."
   defdelegate subscribe_connected(), to: Events
+
+  @doc "Subscribe to auth failures (`{:ha_auth_failed, reason}`)."
+  defdelegate subscribe_auth_failed(), to: Events
 end

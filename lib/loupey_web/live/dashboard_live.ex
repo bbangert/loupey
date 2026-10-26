@@ -9,7 +9,7 @@ defmodule LoupeyWeb.DashboardLive do
     end
 
     status = Loupey.Orchestrator.status()
-    ha_connected = Loupey.HA.connected?()
+    ha_connected = Loupey.HA.ready?()
     ha_entity_count = length(Loupey.HA.get_all_states())
 
     {:ok,
