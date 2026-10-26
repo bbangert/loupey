@@ -77,10 +77,13 @@ defmodule LoupeyWeb.SettingsLive do
       {:ok, _config} ->
         # Connect (or reconnect) to HA
         case Loupey.HA.connect(%Hassock.Config{url: url, token: token}) do
+          # hassock 0.3 returns as soon as the connection process is up
+          # and connects (and authenticates) in the background, so this
+          # only means the connection is running, not that HA accepted us.
           {:ok, _pid} ->
             {:noreply,
              socket
-             |> put_flash(:info, "Saved and connected to Home Assistant")
+             |> put_flash(:info, "Saved. Connecting to Home Assistant...")
              |> assign(ha_connected: true, ha_url: url, ha_token: token, saved: true)}
 
           {:error, :already_started} ->

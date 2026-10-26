@@ -22,6 +22,29 @@ defmodule Loupey.HA.EventsTest do
 
       assert_receive :ha_connected, 500
     end
+
+    test "does not re-broadcast when the same cache re-syncs after a reconnect",
+         %{events: events, pubsub: pubsub} do
+      :ok = Phoenix.PubSub.subscribe(pubsub, "ha:connected")
+
+      send(events, {:hassock_cache, self(), :ready})
+      assert_receive :ha_connected, 500
+
+      send(events, {:hassock_cache, self(), :disconnected})
+      send(events, {:hassock_cache, self(), :ready})
+      refute_receive :ha_connected, 200
+    end
+
+    test "broadcasts again for a new cache process", %{events: events, pubsub: pubsub} do
+      :ok = Phoenix.PubSub.subscribe(pubsub, "ha:connected")
+
+      send(events, {:hassock_cache, self(), :ready})
+      assert_receive :ha_connected, 500
+
+      new_cache = spawn(fn -> :ok end)
+      send(events, {:hassock_cache, new_cache, :ready})
+      assert_receive :ha_connected, 500
+    end
   end
 
   describe "{:changes, ...}" do
@@ -61,11 +84,23 @@ defmodule Loupey.HA.EventsTest do
     end
   end
 
-  describe ":disconnected and unknown messages" do
+  describe ":disconnected, :auth_failed and unknown messages" do
     test "disconnected message is accepted without crashing", %{events: events} do
       ref = Process.monitor(events)
       send(events, {:hassock_cache, self(), :disconnected})
       refute_receive {:DOWN, ^ref, :process, ^events, _}, 200
+    end
+
+    test "auth_failed is logged without crashing", %{events: events} do
+      ref = Process.monitor(events)
+
+      log =
+        ExUnit.CaptureLog.capture_log(fn ->
+          send(events, {:hassock_cache, self(), {:auth_failed, "Invalid access token"}})
+          refute_receive {:DOWN, ^ref, :process, ^events, _}, 200
+        end)
+
+      assert log =~ "rejected the access token"
     end
 
     test "unrelated messages fall through without crashing", %{events: events} do
