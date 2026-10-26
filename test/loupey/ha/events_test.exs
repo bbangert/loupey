@@ -84,6 +84,25 @@ defmodule Loupey.HA.EventsTest do
       refute Events.ready?(events)
     end
 
+    test "broadcasts {:ha_ready, _} on every transition, including re-syncs",
+         %{events: events, pubsub: pubsub} do
+      :ok = Events.subscribe_status(pubsub)
+      cache = spawn(fn -> Process.sleep(:infinity) end)
+
+      send(events, {:hassock_cache, cache, :ready})
+      assert_receive {:ha_ready, true}, 500
+
+      # A second :ready while already ready is not a transition.
+      send(events, {:hassock_cache, cache, :ready})
+      refute_receive {:ha_ready, _}, 100
+
+      send(events, {:hassock_cache, cache, :disconnected})
+      assert_receive {:ha_ready, false}, 500
+
+      send(events, {:hassock_cache, cache, :ready})
+      assert_receive {:ha_ready, true}, 500
+    end
+
     test "is false when the server isn't running" do
       refute Events.ready?(:"no_such_events_#{System.unique_integer([:positive])}")
     end

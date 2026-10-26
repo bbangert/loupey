@@ -5,7 +5,8 @@ defmodule LoupeyWeb.DashboardLive do
   def mount(_params, _session, socket) do
     if connected?(socket) do
       Phoenix.PubSub.subscribe(Loupey.PubSub, "devices")
-      Phoenix.PubSub.subscribe(Loupey.PubSub, "ha:connected")
+      Loupey.HA.subscribe_connected()
+      Loupey.HA.subscribe_status()
     end
 
     status = Loupey.Orchestrator.status()
@@ -113,6 +114,12 @@ defmodule LoupeyWeb.DashboardLive do
   def handle_info(:ha_connected, socket) do
     ha_entity_count = length(Loupey.HA.get_all_states())
     {:noreply, assign(socket, ha_connected: true, ha_entity_count: ha_entity_count)}
+  end
+
+  # Re-syncs after a reconnect, and disconnects, arrive only here.
+  def handle_info({:ha_ready, ready?}, socket) do
+    ha_entity_count = length(Loupey.HA.get_all_states())
+    {:noreply, assign(socket, ha_connected: ready?, ha_entity_count: ha_entity_count)}
   end
 
   def handle_info(_msg, socket), do: {:noreply, socket}

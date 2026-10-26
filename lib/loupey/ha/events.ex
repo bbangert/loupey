@@ -13,6 +13,9 @@ defmodule Loupey.HA.Events do
   - `"ha:state:all"` — same message for any entity
   - `"ha:connected"` — `:ha_connected` after a cache's initial snapshot
     loads
+  - `"ha:status"` — `{:ha_ready, ready?}` whenever `ready?/1` changes,
+    including when the same cache re-syncs after a reconnect (for UI
+    status; unlike `"ha:connected"` it isn't deduped)
   - `"ha:auth_failed"` — `{:ha_auth_failed, reason}` when HA rejects the
     token (hassock then stops retrying)
 
@@ -67,6 +70,11 @@ defmodule Loupey.HA.Events do
     Phoenix.PubSub.subscribe(pubsub, "ha:connected")
   end
 
+  @doc "Subscribe to `{:ha_ready, ready?}` readiness transitions."
+  def subscribe_status(pubsub \\ @default_pubsub) do
+    Phoenix.PubSub.subscribe(pubsub, "ha:status")
+  end
+
   @doc "Subscribe to `{:ha_auth_failed, reason}` (HA rejected the token)."
   def subscribe_auth_failed(pubsub \\ @default_pubsub) do
     Phoenix.PubSub.subscribe(pubsub, "ha:auth_failed")
@@ -97,17 +105,19 @@ defmodule Loupey.HA.Events do
 
   @impl true
   def handle_info({:hassock_cache, cache, :ready}, %{announced: cache} = state) do
-    # Re-sync after a reconnect of a cache we already announced.
-    {:noreply, %{state | ready: cache}}
+    # Re-sync after a reconnect of a cache we already announced: only the
+    # status topic hears about it.
+    {:noreply, set_ready(state, cache)}
   end
 
   def handle_info({:hassock_cache, cache, :ready}, state) do
+    state = set_ready(state, cache)
     Phoenix.PubSub.broadcast(state.pubsub, "ha:connected", :ha_connected)
-    {:noreply, %{state | announced: cache, ready: cache}}
+    {:noreply, %{state | announced: cache}}
   end
 
   def handle_info({:hassock_cache, _cache, :disconnected}, state) do
-    {:noreply, %{state | ready: nil}}
+    {:noreply, set_ready(state, nil)}
   end
 
   def handle_info({:hassock_cache, _cache, {:auth_failed, reason}}, state) do
@@ -115,7 +125,7 @@ defmodule Loupey.HA.Events do
     # repeated failed logins), so surface it rather than failing silently.
     Logger.warning("Home Assistant rejected the access token: #{inspect(reason)}")
     Phoenix.PubSub.broadcast(state.pubsub, "ha:auth_failed", {:ha_auth_failed, reason})
-    {:noreply, %{state | ready: nil}}
+    {:noreply, set_ready(state, nil)}
   end
 
   def handle_info({:hassock_cache, _cache, {:changes, changes}}, %{pubsub: pubsub} = state) do
@@ -129,6 +139,16 @@ defmodule Loupey.HA.Events do
   end
 
   def handle_info(_msg, state), do: {:noreply, state}
+
+  defp set_ready(%{ready: ready} = state, ready), do: state
+
+  defp set_ready(state, ready) do
+    if is_nil(state.ready) != is_nil(ready) do
+      Phoenix.PubSub.broadcast(state.pubsub, "ha:status", {:ha_ready, ready != nil})
+    end
+
+    %{state | ready: ready}
+  end
 
   defp broadcast(pubsub, entity_id, new_state, old_state) do
     msg = {:ha_state_changed, entity_id, new_state, old_state}

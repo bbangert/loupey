@@ -7,6 +7,7 @@ defmodule LoupeyWeb.SettingsLive do
   def mount(_params, _session, socket) do
     if connected?(socket) do
       Loupey.HA.subscribe_connected()
+      Loupey.HA.subscribe_status()
       Loupey.HA.subscribe_auth_failed()
     end
 
@@ -118,6 +119,10 @@ defmodule LoupeyWeb.SettingsLive do
      socket
      |> assign(ha_connected: true)
      |> put_flash(:info, "Connected to Home Assistant")}
+  end
+
+  def handle_info({:ha_ready, ready?}, socket) do
+    {:noreply, assign(socket, ha_connected: ready?)}
   end
 
   def handle_info({:ha_auth_failed, reason}, socket) do

@@ -118,6 +118,9 @@ defmodule Loupey.HA do
   @doc "Subscribe to the connection-ready signal (`:ha_connected`)."
   defdelegate subscribe_connected(), to: Events
 
+  @doc "Subscribe to readiness transitions (`{:ha_ready, ready?}`)."
+  defdelegate subscribe_status(), to: Events
+
   @doc "Subscribe to auth failures (`{:ha_auth_failed, reason}`)."
   defdelegate subscribe_auth_failed(), to: Events
 end
