@@ -96,7 +96,12 @@ defmodule Loupey.HA.Events do
   # re-sync `:ready` after a reconnect); `ready` is the cache that is in
   # sync right now, or nil.
   @impl true
-  def init(pubsub), do: {:ok, %{pubsub: pubsub, announced: nil, ready: nil, monitor: nil}}
+  def init(pubsub) do
+    # After a restart (rest_for_one also restarts hassock), LiveViews that
+    # saw an earlier `{:ha_ready, true}` would otherwise stay green.
+    Phoenix.PubSub.broadcast(pubsub, "ha:status", {:ha_ready, false})
+    {:ok, %{pubsub: pubsub, announced: nil, ready: nil, monitor: nil}}
+  end
 
   @impl true
   def handle_call(:ready?, _from, %{ready: ready} = state) do

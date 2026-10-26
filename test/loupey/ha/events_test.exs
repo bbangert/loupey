@@ -116,6 +116,13 @@ defmodule Loupey.HA.EventsTest do
       refute Events.ready?(events)
     end
 
+    test "broadcasts not-ready when (re)started", %{pubsub: pubsub} do
+      :ok = Events.subscribe_status(pubsub)
+      name = :"events_restart_#{System.unique_integer([:positive])}"
+      start_supervised!({Events, [name: name, pubsub: pubsub]}, id: name)
+      assert_receive {:ha_ready, false}, 500
+    end
+
     test "is false when the server isn't running" do
       refute Events.ready?(:"no_such_events_#{System.unique_integer([:positive])}")
     end
