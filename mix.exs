@@ -48,7 +48,7 @@ defmodule Loupey.MixProject do
       {:image, "~> 0.72.0"},
 
       # Home Assistant
-      {:hassock, "~> 0.2.0"},
+      {:hassock, "~> 0.3.0"},
       {:jason, "~> 1.4"},
       {:yaml_elixir, "~> 2.9"},
       {:ymlr, "~> 5.0"},
@@ -71,7 +71,7 @@ defmodule Loupey.MixProject do
       {:plug_cowboy, "~> 2.7"},
 
       # Database
-      {:ecto_sqlite3, "~> 0.25.0"},
+      {:ecto_sqlite3, "~> 0.26.0"},
 
       # Dev/test
       {:credo, "~> 1.7", only: [:dev, :test], runtime: false},

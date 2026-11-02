@@ -22,6 +22,110 @@ defmodule Loupey.HA.EventsTest do
 
       assert_receive :ha_connected, 500
     end
+
+    test "does not re-broadcast when the same cache re-syncs after a reconnect",
+         %{events: events, pubsub: pubsub} do
+      :ok = Phoenix.PubSub.subscribe(pubsub, "ha:connected")
+
+      send(events, {:hassock_cache, self(), :ready})
+      assert_receive :ha_connected, 500
+
+      send(events, {:hassock_cache, self(), :disconnected})
+      send(events, {:hassock_cache, self(), :ready})
+      refute_receive :ha_connected, 200
+    end
+
+    test "broadcasts again for a new cache process", %{events: events, pubsub: pubsub} do
+      :ok = Phoenix.PubSub.subscribe(pubsub, "ha:connected")
+
+      send(events, {:hassock_cache, self(), :ready})
+      assert_receive :ha_connected, 500
+
+      new_cache = spawn(fn -> :ok end)
+      send(events, {:hassock_cache, new_cache, :ready})
+      assert_receive :ha_connected, 500
+    end
+  end
+
+  describe "ready?/1" do
+    test "is false until :ready, true after, false after :disconnected", %{events: events} do
+      cache = spawn(fn -> Process.sleep(:infinity) end)
+      refute Events.ready?(events)
+
+      send(events, {:hassock_cache, cache, :ready})
+      assert Events.ready?(events)
+
+      send(events, {:hassock_cache, cache, :disconnected})
+      refute Events.ready?(events)
+
+      # The re-sync `:ready` after a reconnect isn't re-broadcast but does
+      # mark the cache ready again.
+      send(events, {:hassock_cache, cache, :ready})
+      assert Events.ready?(events)
+    end
+
+    test "is false after an auth failure", %{events: events} do
+      cache = spawn(fn -> Process.sleep(:infinity) end)
+      send(events, {:hassock_cache, cache, :ready})
+      assert Events.ready?(events)
+
+      ExUnit.CaptureLog.capture_log(fn ->
+        send(events, {:hassock_cache, cache, {:auth_failed, "Invalid access token"}})
+        refute Events.ready?(events)
+      end)
+    end
+
+    test "is false once the ready cache has exited", %{events: events} do
+      cache = spawn(fn -> :ok end)
+      ref = Process.monitor(cache)
+      assert_receive {:DOWN, ^ref, :process, ^cache, _}
+
+      send(events, {:hassock_cache, cache, :ready})
+      refute Events.ready?(events)
+    end
+
+    test "broadcasts {:ha_ready, _} on every transition, including re-syncs",
+         %{events: events, pubsub: pubsub} do
+      :ok = Events.subscribe_status(pubsub)
+      cache = spawn(fn -> Process.sleep(:infinity) end)
+
+      send(events, {:hassock_cache, cache, :ready})
+      assert_receive {:ha_ready, true}, 500
+
+      # A second :ready while already ready is not a transition.
+      send(events, {:hassock_cache, cache, :ready})
+      refute_receive {:ha_ready, _}, 100
+
+      send(events, {:hassock_cache, cache, :disconnected})
+      assert_receive {:ha_ready, false}, 500
+
+      send(events, {:hassock_cache, cache, :ready})
+      assert_receive {:ha_ready, true}, 500
+    end
+
+    test "goes false and broadcasts when the ready cache exits",
+         %{events: events, pubsub: pubsub} do
+      :ok = Events.subscribe_status(pubsub)
+      cache = spawn(fn -> Process.sleep(:infinity) end)
+
+      send(events, {:hassock_cache, cache, :ready})
+      assert_receive {:ha_ready, true}, 500
+
+      Process.exit(cache, :kill)
+      assert_receive {:ha_ready, false}, 500
+      refute Events.ready?(events)
+    end
+
+    test "broadcasts not-ready when (re)started", %{pubsub: pubsub} do
+      :ok = Events.subscribe_status(pubsub)
+      name = :"events_restart_#{System.unique_integer([:positive])}"
+      start_supervised!({Events, [name: name, pubsub: pubsub]}, id: name)
+      assert_receive {:ha_ready, false}, 500
+    end
+
+    test "is false when the server isn't running" do
+      refute Events.ready?(:"no_such_events_#{System.unique_integer([:positive])}")
+    end
   end
 
   describe "{:changes, ...}" do
@@ -61,11 +165,25 @@ defmodule Loupey.HA.EventsTest do
     end
   end
 
-  describe ":disconnected and unknown messages" do
+  describe ":disconnected, :auth_failed and unknown messages" do
     test "disconnected message is accepted without crashing", %{events: events} do
       ref = Process.monitor(events)
       send(events, {:hassock_cache, self(), :disconnected})
       refute_receive {:DOWN, ^ref, :process, ^events, _}, 200
+    end
+
+    test "auth_failed is logged and broadcast", %{events: events, pubsub: pubsub} do
+      :ok = Events.subscribe_auth_failed(pubsub)
+      ref = Process.monitor(events)
+
+      log =
+        ExUnit.CaptureLog.capture_log(fn ->
+          send(events, {:hassock_cache, self(), {:auth_failed, "Invalid access token"}})
+          refute_receive {:DOWN, ^ref, :process, ^events, _}, 200
+        end)
+
+      assert log =~ "rejected the access token"
+      assert_receive {:ha_auth_failed, "Invalid access token"}
     end
 
     test "unrelated messages fall through without crashing", %{events: events} do

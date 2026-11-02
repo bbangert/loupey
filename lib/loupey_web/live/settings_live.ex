@@ -5,7 +5,13 @@ defmodule LoupeyWeb.SettingsLive do
 
   @impl true
   def mount(_params, _session, socket) do
-    ha_connected = Loupey.HA.connected?()
+    if connected?(socket) do
+      Loupey.HA.subscribe_connected()
+      Loupey.HA.subscribe_status()
+      Loupey.HA.subscribe_auth_failed()
+    end
+
+    ha_connected = Loupey.HA.ready?()
     saved_config = Settings.get_active_ha_config()
 
     {:ok,
@@ -76,18 +82,18 @@ defmodule LoupeyWeb.SettingsLive do
     case Settings.save_ha_config(%{"url" => url, "token" => token}) do
       {:ok, _config} ->
         # Connect (or reconnect) to HA
-        case Loupey.HA.connect(%Hassock.Config{url: url, token: token}) do
+        # Replace any running connection so new credentials take effect
+        # (hassock 0.3 stops retrying once HA rejects a token).
+        case Loupey.HA.reconnect(%Hassock.Config{url: url, token: token}) do
+          # hassock 0.3 returns as soon as the connection process is up
+          # and connects (and authenticates) in the background, so this
+          # only means the connection is running, not that HA accepted us.
+          # The status turns green on `:ha_connected` (handle_info below).
           {:ok, _pid} ->
             {:noreply,
              socket
-             |> put_flash(:info, "Saved and connected to Home Assistant")
-             |> assign(ha_connected: true, ha_url: url, ha_token: token, saved: true)}
-
-          {:error, :already_started} ->
-            {:noreply,
-             socket
-             |> put_flash(:info, "Settings saved. Already connected.")
-             |> assign(ha_url: url, ha_token: token, saved: true)}
+             |> put_flash(:info, "Saved. Connecting to Home Assistant...")
+             |> assign(ha_connected: false, ha_url: url, ha_token: token, saved: true)}
 
           {:error, reason} ->
             {:noreply,
@@ -102,4 +108,25 @@ defmodule LoupeyWeb.SettingsLive do
          |> put_flash(:error, "Failed to save: #{inspect(changeset.errors)}")}
     end
   end
+
+  @impl true
+  def handle_info(:ha_connected, socket) do
+    {:noreply,
+     socket
+     |> assign(ha_connected: true)
+     |> put_flash(:info, "Connected to Home Assistant")}
+  end
+
+  def handle_info({:ha_ready, ready?}, socket) do
+    {:noreply, assign(socket, ha_connected: ready?)}
+  end
+
+  def handle_info({:ha_auth_failed, reason}, socket) do
+    {:noreply,
+     socket
+     |> assign(ha_connected: false)
+     |> put_flash(:error, "Home Assistant rejected the access token: #{inspect(reason)}")}
+  end
+
+  def handle_info(_msg, socket), do: {:noreply, socket}
 end

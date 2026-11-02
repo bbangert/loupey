@@ -48,6 +48,16 @@ defmodule Loupey.HA.Supervisor do
     Supervisor.start_child(__MODULE__, child_spec)
   end
 
+  @doc """
+  Replace any running hassock connection with one using `config`. Used
+  when credentials are saved: hassock 0.3 stops retrying after HA rejects
+  a token, so a corrected token needs a fresh connection.
+  """
+  def reconnect(%Hassock.Config{} = config) do
+    _ = disconnect()
+    connect(config)
+  end
+
   @doc "Stop the hassock connection."
   def disconnect do
     case Supervisor.terminate_child(__MODULE__, :hassock) do
